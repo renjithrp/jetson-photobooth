@@ -12,6 +12,7 @@ import os
 import shutil
 import socket
 import subprocess
+import threading
 import urllib.request
 from pathlib import Path
 
@@ -22,7 +23,7 @@ from fastapi import (Depends, FastAPI, File, HTTPException, Request, Response,
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, config, face_index, gestures, liveview, uploaders
+from . import auth, config, face_index, faces, gestures, liveview, uploaders
 from .auth import require_auth
 from .faces import make_face_engine
 from .camera import make_camera
@@ -113,6 +114,8 @@ async def lifespan(app: FastAPI):
         hub.start()
     triggers.start(s, skip_gesture=sony)               # hub handles gesture for Sony
     watchdog.start()                                   # self-heals a wedged camera daemon
+    if s.faces.enabled:                                # load the face model off the boot path
+        threading.Thread(target=faces.warmup, args=(s,), daemon=True).start()
     log.info("ready at %s (admin: %s/admin)", base_url(), base_url())
     yield
     watchdog.stop()
@@ -368,8 +371,12 @@ async def preview_stream(request: Request) -> StreamingResponse:
 async def faces_status() -> dict:
     s = config.load()
     ok, detail = make_face_engine(s).available()
+    provs = faces.active_providers()
+    gpu = any("CUDA" in p or "Tensorrt" in p for p in provs)
     return {"enabled": s.faces.enabled, "engine": s.faces.engine,
-            "available": ok, "detail": detail, **face_index.index.stats()}
+            "available": ok, "detail": detail,
+            "providers": provs, "gpu": gpu, "loaded": bool(provs),
+            **face_index.index.stats()}
 
 
 @app.get("/api/faces/groups")

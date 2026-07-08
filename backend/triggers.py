@@ -113,9 +113,98 @@ class GestureTrigger(_BaseTrigger):
         return gesture_matches(self.t.gesture_type, lm)
 
 
+# Known USB-serial adapter vendor IDs used by Arduino Nano clones/originals.
+_ARDUINO_VIDS = {0x2341, 0x2A03, 0x1B4F, 0x239A,  # Arduino / SparkFun / Adafruit
+                 0x1A86, 0x0403, 0x10C4}          # CH340, FTDI, CP210x (common Nano clones)
+
+
+class ArduinoTrigger(_BaseTrigger):
+    """USB Arduino Nano button trigger over serial.
+
+    The Arduino sketch prints a line per event (default ``TRIG`` for capture,
+    ``PRINT`` to print the last session). Hot-pluggable: the reader auto-detects the
+    port by USB VID/PID, and reconnects if the Arduino is unplugged/replugged.
+    Optional dependency (pyserial); missing -> logs and disables, booth keeps working.
+    """
+
+    def __init__(self, on_trigger, settings: Settings,
+                 on_print: Callable[[str], None] | None = None) -> None:
+        super().__init__(on_trigger)
+        self.t = settings.trigger
+        self.on_print = on_print
+
+    def _find_port(self):
+        from serial.tools import list_ports
+        ports = list(list_ports.comports())
+        # explicit port wins
+        if self.t.arduino_port and self.t.arduino_port != "auto":
+            return self.t.arduino_port
+        # prefer a known Arduino VID, then any ACM/USB serial device
+        for p in ports:
+            if p.vid in _ARDUINO_VIDS:
+                return p.device
+        for p in ports:
+            if "ACM" in p.device or "USB" in p.device:
+                return p.device
+        return None
+
+    def run(self) -> None:
+        try:
+            import serial  # pyserial
+        except Exception as e:
+            print(f"[trigger:arduino] pyserial not available ({e}); Arduino trigger disabled")
+            return
+        token = (self.t.arduino_trigger_token or "").strip().upper()
+        ptoken = (self.t.arduino_print_token or "").strip().upper()
+        last_fire = 0.0
+        while not self._stop.is_set():
+            port = self._find_port()
+            if not port:
+                time.sleep(2)   # wait for the Arduino to be plugged in
+                continue
+            try:
+                ser = serial.Serial(port, self.t.arduino_baud, timeout=1)
+            except Exception as e:
+                print(f"[trigger:arduino] cannot open {port} ({e}); retrying")
+                time.sleep(2)
+                continue
+            print(f"[trigger:arduino] listening on {port} @ {self.t.arduino_baud} "
+                  f"(fire on '{token or 'any line'}')")
+            try:
+                while not self._stop.is_set():
+                    raw = ser.readline()
+                    if not raw:
+                        continue
+                    line = raw.decode(errors="ignore").strip().upper()
+                    if not line:
+                        continue
+                    if ptoken and line == ptoken:
+                        print("[trigger:arduino] PRINT request")
+                        if self.on_print:
+                            self.on_print("arduino")
+                        continue
+                    if token and line != token:
+                        continue  # a token is configured and this isn't it
+                    now = time.time()
+                    if (now - last_fire) * 1000 < self.t.arduino_debounce_ms:
+                        continue
+                    last_fire = now
+                    self.on_trigger("arduino")
+            except Exception as e:
+                print(f"[trigger:arduino] serial error on {port} ({e}); reconnecting")
+            finally:
+                try:
+                    ser.close()
+                except Exception:
+                    pass
+            time.sleep(1)   # brief pause before re-detecting (handles unplug/replug)
+
+
 class TriggerManager:
-    def __init__(self, on_trigger: Callable[[str], None]) -> None:
+    def __init__(self, on_trigger: Callable[[str], None],
+                 on_print: Callable[[str], None] | None = None) -> None:
         self.on_trigger = on_trigger
+        self.on_print = on_print
         self._threads: list[_BaseTrigger] = []
 
     def start(self, settings: Settings, skip_gesture: bool = False) -> None:
@@ -123,7 +212,9 @@ class TriggerManager:
         (so we don't also open a separate webcam for it)."""
         self.stop()
         mode = settings.trigger.mode
-        if mode in ("gpio", "both"):
+        if mode in ("arduino", "both"):
+            self._threads.append(ArduinoTrigger(self.on_trigger, settings, self.on_print))
+        if mode in ("gpio",):   # legacy Orange Pi button
             self._threads.append(GPIOTrigger(self.on_trigger, settings))
         if mode in ("gesture", "both") and not skip_gesture:
             self._threads.append(GestureTrigger(self.on_trigger, settings))

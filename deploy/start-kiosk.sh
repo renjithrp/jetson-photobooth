@@ -1,36 +1,40 @@
 #!/usr/bin/env bash
 # Launch the kiosk browser fullscreen pointing at the local booth UI.
+# Runs inside the pb GNOME/X11 session (via ~/.config/autostart on the Jetson).
 set -e
 PORT="${BOOTH_PORT:-8000}"
 URL="http://localhost:$PORT/"
 CERTFLAG=""
-# match the backend scheme; accept the self-signed cert when HTTPS is enabled
 if [ -f /opt/photobooth/certs/cert.pem ]; then
   URL="https://localhost:$PORT/"
   CERTFLAG="--ignore-certificate-errors --test-type"
 fi
 
-# pick whichever chromium is installed
-BIN="$(command -v chromium || command -v chromium-browser || command -v google-chrome || true)"
-if [ -z "$BIN" ]; then
-  echo "No chromium found. Install with: sudo apt install -y chromium-browser" >&2
+# Resolve a working DISPLAY (Jetson GNOME is usually :1, not :0).
+if [ -z "${DISPLAY:-}" ] || ! xset -q >/dev/null 2>&1; then
+  for d in :0 :1 :2; do
+    if DISPLAY=$d xset -q >/dev/null 2>&1; then export DISPLAY=$d; break; fi
+  done
+fi
+
+# Wait for the backend to answer before opening the browser.
+until curl -skf "$URL" >/dev/null || curl -sf "http://localhost:$PORT/" >/dev/null; do sleep 1; done
+
+# pick whichever chromium is installed (snap symlinks to /snap/bin/chromium)
+BIN="$(command -v chromium || command -v chromium-browser || command -v google-chrome || echo /snap/bin/chromium)"
+if [ ! -x "$BIN" ] && ! command -v "$BIN" >/dev/null 2>&1; then
+  echo "No chromium found. Install with: sudo snap install chromium" >&2
   exit 1
 fi
 
-# disable screen blanking / power management
+# Disable screen blanking / lock (GNOME + X core) so the kiosk never goes dark.
 xset s off -dpms 2>/dev/null || true
 xset s noblank 2>/dev/null || true
-# xfce4-power-manager re-enables DPMS after login (overriding both xset and the xorg
-# 10-noblank.conf), which puts the monitor into Standby and blanks the kiosk. Turn it
-# off at the source. Persists via xfconf; harmless where xfce/xfconf isn't present.
-export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/$(id -u)/bus}"
-xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/dpms-enabled -s false 2>/dev/null || true
+gsettings set org.gnome.desktop.session idle-delay 0 2>/dev/null || true
+gsettings set org.gnome.desktop.screensaver lock-enabled false 2>/dev/null || true
+gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing' 2>/dev/null || true
 
-# Chromium refuses to run as root without --no-sandbox (the Orange Pi desktop is root)
-SANDBOX=""
-[ "$(id -u)" = "0" ] && SANDBOX="--no-sandbox"
-
-exec "$BIN" $SANDBOX $CERTFLAG \
+exec "$BIN" $CERTFLAG \
   --kiosk "$URL" \
   --incognito --disk-cache-size=1 \
   --noerrdialogs --disable-infobars --no-first-run \
@@ -38,7 +42,4 @@ exec "$BIN" $SANDBOX $CERTFLAG \
   --autoplay-policy=no-user-gesture-required \
   --check-for-update-interval=31536000 \
   --overscroll-history-navigation=0 \
-  --disable-accelerated-mjpeg-decode \
-  --disable-accelerated-video-decode \
-  --disable-features=VaapiVideoDecoder,VaapiJpegDecoder \
-  --disable-gpu-compositing
+  --password-store=basic

@@ -1,18 +1,73 @@
 """Face embedding engine.
 
-Detection: MediaPipe Face Detection (CPU, fast). Embedding: ArcFace on the RK3588
-NPU via RKNN (rknn-toolkit-lite2). `embed_image()` returns one L2-normalized vector
-per detected face. Everything degrades gracefully: if rknnlite or the model is
-missing, `available()` says so and the booth keeps working without face grouping.
+On the Jetson we use **InsightFace** (SCRFD detector + ArcFace r50 embedding) running on
+the GPU via onnxruntime (CUDA / TensorRT execution provider), with an automatic CPU
+fallback. `embed_image()` returns one L2-normalized 512-d vector per detected face.
+
+Everything degrades gracefully: if onnxruntime/insightface or the model pack is missing,
+`available()` says so and the booth keeps working without face grouping. Embeddings are
+engine-agnostic, so `face_index` clustering is unchanged.
 """
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
+from . import config
 from .models import Settings
 
 log = logging.getLogger("booth.faces")
+
+# Loading the InsightFace pack (5 ONNX models) costs tens of seconds, so keep ONE loaded
+# instance per (pack, det_size, gpu) config and share it across every engine instance —
+# make_face_engine() is called per capture session, and we must not reload each time.
+_APP_CACHE: dict = {}
+
+
+def _get_app(model_pack: str, det_size: int, use_gpu: bool):
+    key = (model_pack, det_size, use_gpu)
+    hit = _APP_CACHE.get(key)
+    if hit is not None:
+        return hit
+    from insightface.app import FaceAnalysis
+
+    if use_gpu:
+        providers = ["CUDAExecutionProvider", "TensorrtExecutionProvider", "CPUExecutionProvider"]
+        ctx_id = 0
+    else:
+        providers = ["CPUExecutionProvider"]
+        ctx_id = -1
+    # models live under <root>/models/<pack>/ — pin to the app dir so it works offline
+    # regardless of which user runs the service.
+    root = str(config.data_dir().parent)
+    # only load what grouping needs (detector + ArcFace embedding); skip the landmark and
+    # genderage models to cut load time + memory.
+    app = FaceAnalysis(name=model_pack, root=root, providers=providers,
+                       allowed_modules=["detection", "recognition"])
+    app.prepare(ctx_id=ctx_id, det_size=(det_size, det_size))
+    try:
+        in_use = list(app.models["recognition"].session.get_providers())
+    except Exception:
+        in_use = providers
+    log.info("InsightFace loaded (pack=%s, det=%d, providers=%s)", model_pack, det_size, in_use)
+    _APP_CACHE[key] = (app, in_use)
+    return _APP_CACHE[key]
+
+
+def active_providers() -> list[str]:
+    """The execution providers of the currently-loaded face model (for admin status)."""
+    for _app, prov in _APP_CACHE.values():
+        return prov
+    return []
+
+
+def warmup(settings: Settings) -> None:
+    """Load the face model at startup so the first guest doesn't wait for a cold init."""
+    if not settings.faces.enabled or settings.faces.engine == "off":
+        return
+    try:
+        _get_app(settings.faces.model_pack, settings.faces.det_size, settings.faces.use_gpu)
+    except Exception as e:
+        log.warning("face warmup skipped: %s", e)
 
 
 class FaceEngine:
@@ -23,6 +78,9 @@ class FaceEngine:
 
     def embed_image(self, path) -> list:
         raise NotImplementedError
+
+    def providers(self) -> list[str]:
+        return []
 
 
 class NullFaceEngine(FaceEngine):
@@ -35,16 +93,17 @@ class NullFaceEngine(FaceEngine):
         return []
 
 
-class RknnArcFaceEngine(FaceEngine):
-    name = "rknn"
+class InsightFaceEngine(FaceEngine):
+    name = "insightface"
 
     def __init__(self, settings: Settings) -> None:
-        self.model_path = settings.faces.rknn_model
-        self.min_face = settings.faces.min_face_px
-        self._rknn = None
-        self._detector = None
-        self._np = None
-        self._cv2 = None
+        f = settings.faces
+        self.model_pack = f.model_pack
+        self.det_size = f.det_size
+        self.use_gpu = f.use_gpu
+        self.min_face = f.min_face_px
+        self._app = None
+        self._providers: list[str] = []
 
     def available(self) -> tuple[bool, str]:
         try:
@@ -53,70 +112,42 @@ class RknnArcFaceEngine(FaceEngine):
         except Exception as e:
             return False, f"opencv/numpy missing: {e}"
         try:
-            import mediapipe  # noqa
+            import onnxruntime  # noqa
         except Exception as e:
-            return False, f"mediapipe missing: {e}"
+            return False, f"onnxruntime missing: {e}"
         try:
-            from rknnlite.api import RKNNLite  # noqa
+            import insightface  # noqa
         except Exception as e:
-            return False, f"rknnlite not installed: {e}"
-        if not Path(self.model_path).exists():
-            return False, f"model not found: {self.model_path}"
+            return False, f"insightface missing: {e}"
         return True, "ready"
 
     def _ensure(self) -> None:
-        if self._rknn is not None:
+        if self._app is not None:
             return
-        import cv2
-        import mediapipe as mp
-        import numpy as np
-        from rknnlite.api import RKNNLite
+        self._app, self._providers = _get_app(self.model_pack, self.det_size, self.use_gpu)
 
-        self._np, self._cv2 = np, cv2
-        # model_selection=0 = short-range (within ~2m) — best for booth-distance faces
-        self._detector = mp.solutions.face_detection.FaceDetection(
-            model_selection=0, min_detection_confidence=0.6)
-        r = RKNNLite()
-        if r.load_rknn(self.model_path) != 0:
-            raise RuntimeError(f"load_rknn failed: {self.model_path}")
-        if r.init_runtime() != 0:
-            raise RuntimeError("rknn init_runtime failed")
-        self._rknn = r
-        log.info("ArcFace RKNN engine ready (%s)", self.model_path)
+    def providers(self) -> list[str]:
+        return self._providers
 
     def embed_image(self, path) -> list:
         self._ensure()
-        np, cv2 = self._np, self._cv2
+        import cv2
+
         img = cv2.imread(str(path))
         if img is None:
             return []
-        h, w = img.shape[:2]
-        res = self._detector.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-        if not res.detections:
-            return []
+        faces = self._app.get(img)
         out = []
-        for det in res.detections:
-            b = det.location_data.relative_bounding_box
-            x1, y1 = max(0, int(b.xmin * w)), max(0, int(b.ymin * h))
-            bw, bh = int(b.width * w), int(b.height * h)
-            if bw < self.min_face or bh < self.min_face:
+        for fc in faces:
+            x1, y1, x2, y2 = [int(v) for v in fc.bbox]
+            if (x2 - x1) < self.min_face or (y2 - y1) < self.min_face:
                 continue
-            face = img[y1:min(h, y1 + bh), x1:min(w, x1 + bw)]
-            if face.size == 0:
-                continue
-            chip = cv2.resize(face, (112, 112))
-            chip = cv2.cvtColor(chip, cv2.COLOR_BGR2RGB)
-            # RKNN model is converted with mean/std baked in -> feed uint8 NHWC
-            inp = np.expand_dims(chip, 0).astype(np.uint8)
-            emb = self._rknn.inference(inputs=[inp])[0].flatten().astype("float32")
-            n = float(np.linalg.norm(emb))
-            if n > 0:
-                emb = emb / n
-            out.append(emb.tolist())
+            emb = fc.normed_embedding  # already L2-normalized, 512-d
+            out.append(emb.astype("float32").tolist())
         return out
 
 
 def make_face_engine(settings: Settings) -> FaceEngine:
     if not settings.faces.enabled or settings.faces.engine == "off":
         return NullFaceEngine()
-    return RknnArcFaceEngine(settings)
+    return InsightFaceEngine(settings)

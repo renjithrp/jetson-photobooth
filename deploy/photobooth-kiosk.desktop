@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=PhotoBooth Pro Kiosk
+Comment=Fullscreen booth UI on login
+Exec=/opt/photobooth/deploy/start-kiosk.sh
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+Terminal=false

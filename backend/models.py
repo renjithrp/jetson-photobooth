@@ -21,8 +21,16 @@ class GeneralSettings(BaseModel):
 
 
 class TriggerSettings(BaseModel):
-    mode: Literal["gesture", "gpio", "both"] = "gesture"
-    # GPIO (Orange Pi 5B uses libgpiod character device)
+    # gesture = AI hand gesture; arduino = USB Arduino Nano button; both = either fires
+    mode: Literal["gesture", "arduino", "both", "gpio"] = "gesture"
+    # USB Arduino Nano trigger (serial over USB). The sketch prints a line per button
+    # press; the host fires a capture on it. Hot-pluggable with auto-reconnect.
+    arduino_port: str = "auto"            # "auto" = detect by USB VID/PID, or e.g. /dev/ttyACM0
+    arduino_baud: int = 115200
+    arduino_trigger_token: str = "TRIG"   # line that fires a capture ("" = any non-empty line)
+    arduino_print_token: str = "PRINT"    # line that requests a print of the last session
+    arduino_debounce_ms: int = 400        # ignore repeated presses within this window
+    # GPIO (legacy — Orange Pi 5B libgpiod; unused on Jetson, kept for compatibility)
     gpio_chip: str = "gpiochip0"
     gpio_line: int = 17
     gpio_active_low: bool = True
@@ -59,9 +67,11 @@ class CameraSettings(BaseModel):
     backend: Literal["mock", "sony", "webcam"] = "mock"
     transfer_size: Literal["small", "original"] = "small"   # Sony PC-save size
     save_subdir_by_date: bool = True
-    # Sony CrSDK helper binary on the Pi (captures + downloads to output_dir)
-    capture_binary: str = "/root/CrSDK/external/crsdk/boothCapture"
-    capture_output_dir: str = "/root/photos"
+    # Sony CrSDK helper binary on the Jetson (captures + downloads to output_dir).
+    # capture_output_dir MUST match the camera daemon's BOOTH_CAPTURE_DIR (where the
+    # SDK downloads stills); the booth then moves new files into the session folder.
+    capture_binary: str = "/opt/CrSDK/external/crsdk/boothCapture"
+    capture_output_dir: str = "/opt/photobooth/data/incoming"
     capture_timeout_seconds: int = 40
 
 
@@ -129,13 +139,15 @@ class ShareSettings(BaseModel):
 
 
 class FacesSettings(BaseModel):
-    """Group photos by the person's face. Detection = MediaPipe (CPU);
-    embedding = ArcFace on the RK3588 NPU (RKNN)."""
+    """Group photos by the person's face. On the Jetson: InsightFace (SCRFD detector +
+    ArcFace r50 embedding) on the GPU via onnxruntime (CUDA/TensorRT EP), CPU fallback."""
     enabled: bool = False
-    engine: Literal["rknn", "off"] = "rknn"
-    rknn_model: str = "/opt/photobooth/models/arcface.rknn"
-    match_threshold: float = 0.45         # cosine similarity to consider "same person"
-    min_face_px: int = 60                 # ignore faces smaller than this
+    engine: Literal["insightface", "off"] = "insightface"
+    model_pack: str = "buffalo_l"         # InsightFace pack: SCRFD-10G det + ArcFace r50
+    det_size: int = 640                   # detector input (square); larger = smaller faces
+    use_gpu: bool = True                  # CUDA EP when available, else CPU
+    match_threshold: float = 0.35         # cosine similarity to consider "same person"
+    min_face_px: int = 50                 # ignore faces smaller than this (bbox px)
     allow_guest_find: bool = True         # let guests "find my photos" via a selfie
 
 

@@ -1,5 +1,5 @@
 [Unit]
-Description=AI Photo Booth backend
+Description=PhotoBooth Pro backend (FastAPI)
 After=network-online.target
 Wants=network-online.target
 

@@ -733,9 +733,12 @@ int main(void)
         } catch(const std::exception&) GotoError("", 0);
     }
 
-    // download captured stills into /root/photos as booth*.JPG
+    // download captured stills into BOOTH_CAPTURE_DIR (default /opt/photobooth/data/incoming)
+    // as booth*.JPG. Must match settings.camera.capture_output_dir on the Python side.
     {
-        CrString save = CRSTR("/root/photos");
+        const char* capdir = getenv("BOOTH_CAPTURE_DIR");
+        CrString save = capdir && *capdir ? CrString(capdir) : CRSTR("/opt/photobooth/data/incoming");
+        fs::create_directories(save);
         err = SCRSDK::SetSaveInfo(m_device_handle, const_cast<CrChar*>(save.data()),
                                   const_cast<CrChar*>(CRSTR("booth")), -1/*startNo*/);
         if(err) GotoError("SetSaveInfo", err);

@@ -8,6 +8,7 @@ Pillow==10.3.0
 qrcode==7.4.2
 httpx==0.27.0           # guest captive-portal (:80) proxy to the HTTPS backend
 numpy>=1.26,<2          # face clustering (and required by opencv/mediapipe)
+pyserial==3.5           # USB Arduino Nano button trigger
 
 # --- optional (install on the Pi as needed) ---
 # opencv-python-headless      # webcam live view + gesture frames
