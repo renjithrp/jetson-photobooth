@@ -96,7 +96,8 @@ async def lifespan(app: FastAPI):
     sync_worker.stop()
 
 
-app = FastAPI(title="AI Photo Booth", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="PhotoBooth Pro", version="1.0.0", lifespan=lifespan)
+app.mount("/assets", StaticFiles(directory=str(FRONTEND / "assets")), name="assets")
 service = CaptureService(base_url)
 triggers = TriggerManager(on_trigger=service.trigger_threadsafe)
 watchdog = CameraWatchdog(hub, config, lambda: service.busy)
@@ -312,7 +313,7 @@ async def manual_focus() -> dict:
         return {"ok": False, "error": str(e)}
 
 
-_SERVICES = {"photobooth", "photobooth-liveview", "photobooth-kiosk"}
+_SERVICES = {"photobooth", "photobooth-camera", "photobooth-kiosk"}
 _ACTIONS = {"start", "stop", "restart"}
 
 

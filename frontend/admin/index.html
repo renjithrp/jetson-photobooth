@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f766e">
-<title>Photo Booth — Admin</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<title>PhotoBooth Pro — Admin</title>
+<script src="/assets/tailwind.js"></script>
 <style>
   :root{ --teal:#0f766e; --teal2:#0d9488; }
   *{ -webkit-tap-highlight-color: transparent; }
@@ -112,7 +112,7 @@
       <p class="sub">Restart a service if something gets stuck. The app restarts in the background — this page reconnects in a few seconds.</p>
       <div class="flex flex-wrap gap-2">
         <button class="btn btn-ghost" onclick="svc('photobooth','restart')">↻ Restart app</button>
-        <button class="btn btn-ghost" onclick="svc('photobooth-liveview','restart')">↻ Restart camera</button>
+        <button class="btn btn-ghost" onclick="svc('photobooth-camera','restart')">↻ Restart camera</button>
         <button class="btn btn-ghost" onclick="svc('photobooth-kiosk','restart')">↻ Restart kiosk</button>
         <button class="btn btn-ghost" onclick="svc('photobooth-kiosk','stop')">■ Stop kiosk</button>
         <button class="btn btn-ghost" onclick="svc('photobooth-kiosk','start')">▶ Start kiosk</button>
@@ -125,11 +125,11 @@
   <!-- ============ TRIGGER ============ -->
   <section data-panel="trigger" style="display:none">
     <div class="card"><h2>🎬 How a photo is triggered</h2>
-      <p class="sub">Choose what starts a capture. Gesture watches the live camera for a hand sign; GPIO is a physical button.</p>
+      <p class="sub">Choose what starts a capture. Gesture watches the live camera for a hand sign; Arduino is a physical USB button.</p>
       <div class="grid2">
         <div><label class="fld">Trigger mode</label><select data-path="trigger.mode">
           <option value="gesture">✋ Hand gesture</option>
-          <option value="gpio">🔘 Physical button (GPIO)</option>
+          <option value="arduino">🔘 USB button (Arduino)</option>
           <option value="both">Both</option></select></div>
         <div><label class="fld">Cooldown after a photo (s)</label>
           <input type="number" data-float step="0.5" data-path="trigger.cooldown_seconds"></div>
@@ -187,16 +187,20 @@
       </div>
     </div>
 
-    <div class="card"><h2>🔘 Physical button (GPIO)</h2>
-      <p class="sub">Only used when the trigger mode includes GPIO.</p>
+    <div class="card"><h2>🔘 USB button (Arduino Nano)</h2>
+      <p class="sub">A physical button wired to an Arduino Nano over USB. The Nano prints a line
+        on press; the booth fires a capture. Auto-detects the port and reconnects if unplugged.
+        Only used when the trigger mode includes Arduino.</p>
       <div class="grid2">
-        <div><label class="fld">Chip</label><input type="text" data-path="trigger.gpio_chip"></div>
-        <div><label class="fld">Line</label><input type="number" data-path="trigger.gpio_line"></div>
+        <div><label class="fld">Serial port (<code>auto</code> = detect)</label><input type="text" data-path="trigger.arduino_port"></div>
+        <div><label class="fld">Baud rate</label><input type="number" data-path="trigger.arduino_baud"></div>
       </div>
-      <div class="grid2 mt-1 items-center">
-        <div class="toggle"><div class="t-txt">Active low</div>
-          <label class="sw"><input type="checkbox" data-path="trigger.gpio_active_low"><i></i></label></div>
-        <div><label class="fld">Debounce (ms)</label><input type="number" data-path="trigger.gpio_debounce_ms"></div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Capture keyword</label><input type="text" data-path="trigger.arduino_trigger_token"></div>
+        <div><label class="fld">Print keyword</label><input type="text" data-path="trigger.arduino_print_token"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Debounce (ms)</label><input type="number" data-path="trigger.arduino_debounce_ms"></div>
       </div>
     </div>
   </section>
@@ -286,6 +290,17 @@
           <label class="sw"><input type="checkbox" data-path="storage.ftp.passive"><i></i></label></div>
       </div>
     </div>
+    <div class="card"><h2>🔄 Background sync
+      <button class="btn btn-ghost btn-xs ml-auto" onclick="retrySync()">Retry now</button></h2>
+      <p class="sub">Uploads run in the background with automatic retry — captures never wait on the
+        network, and anything queued while offline uploads itself when the link returns.</p>
+      <div class="toggle border-b border-slate-100">
+        <div><div class="t-txt">Queue uploads in the background</div>
+          <div class="t-sub">Off = upload inline during the capture (legacy)</div></div>
+        <label class="sw"><input type="checkbox" data-path="storage.background_sync"><i></i></label></div>
+      <div id="syncStatus" class="mt-3 text-sm text-slate-500">…</div>
+    </div>
+
     <div class="card"><h2>🔗 Share / QR</h2>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Show QR code after capture</div>
         <label class="sw"><input type="checkbox" data-path="share.qr_enabled"><i></i></label></div>
@@ -318,32 +333,85 @@
       </div>
       <div class="mt-1"><label class="fld">Background color</label><input type="text" data-path="collage.background"></div>
     </div>
-    <div class="card"><h2>🧠 AI effects (RK3588 NPU)</h2>
+    <div class="card"><h2>🧠 AI background (GPU)</h2>
+      <p class="sub">GPU portrait segmentation — drop the background or replace it with a virtual
+        backdrop. Model wiring lands in the AI features phase.</p>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Enabled</div>
         <label class="sw"><input type="checkbox" data-path="ai.enabled"><i></i></label></div>
       <div class="grid2 mt-2">
         <div><label class="fld">Effect</label><select data-path="ai.effect">
-          <option>none</option><option>bg_remove</option><option>bg_replace</option></select></div>
-        <div><label class="fld">RKNN model path</label><input type="text" data-path="ai.rknn_model"></div>
+          <option value="none">none</option><option value="bg_remove">background remove</option>
+          <option value="bg_replace">background replace</option></select></div>
+        <div><label class="fld">Background image (replace)</label><input type="text" data-path="ai.background_image"></div>
       </div>
-      <div class="mt-1"><label class="fld">Background image (bg_replace)</label><input type="text" data-path="ai.background_image"></div>
     </div>
-    <div class="card"><h2>👥 Face grouping (RK3588 NPU)</h2>
+    <div class="card"><h2>👥 Face grouping (InsightFace · GPU)</h2>
       <p id="faceStatus" class="sub">…</p>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Group photos by face</div>
         <label class="sw"><input type="checkbox" data-path="faces.enabled"><i></i></label></div>
       <div class="grid2 mt-2">
-        <div><label class="fld">Engine</label><select data-path="faces.engine"><option>rknn</option><option>off</option></select></div>
+        <div><label class="fld">Model pack</label><select data-path="faces.model_pack">
+          <option value="buffalo_l">buffalo_l (accurate)</option>
+          <option value="buffalo_s">buffalo_s (fast)</option></select></div>
         <div><label class="fld">Match threshold (higher = stricter)</label><input type="number" data-float step="0.01" data-path="faces.match_threshold"></div>
       </div>
       <div class="grid2 mt-1">
-        <div><label class="fld">ArcFace .rknn model path</label><input type="text" data-path="faces.rknn_model"></div>
+        <div><label class="fld">Detector size</label><select data-path="faces.det_size">
+          <option value="640">640 (default)</option><option value="800">800 (smaller faces)</option>
+          <option value="320">320 (faster)</option></select></div>
         <div><label class="fld">Min face size (px)</label><input type="number" data-path="faces.min_face_px"></div>
       </div>
-      <div class="toggle mt-1"><div class="t-txt">Allow guests "find my photos" (selfie)</div>
-        <label class="sw"><input type="checkbox" data-path="faces.allow_guest_find"><i></i></label></div>
+      <div class="grid2 mt-1 items-center">
+        <div class="toggle"><div><div class="t-txt">Use GPU</div><div class="t-sub">CUDA/TensorRT, falls back to CPU</div></div>
+          <label class="sw"><input type="checkbox" data-path="faces.use_gpu"><i></i></label></div>
+        <div class="toggle"><div class="t-txt">Guests "find my photos"</div>
+          <label class="sw"><input type="checkbox" data-path="faces.allow_guest_find"><i></i></label></div>
+      </div>
       <div class="mt-2"><button class="btn btn-ghost btn-xs" onclick="loadPeople()">Show people</button></div>
       <div id="people" class="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-3"></div>
+    </div>
+  </section>
+
+  <!-- ============ NETWORK ============ -->
+  <section data-panel="network" style="display:none">
+    <div class="card"><h2>📶 Connection
+      <button class="btn btn-ghost btn-xs ml-auto" onclick="loadNet()">↻ Refresh</button></h2>
+      <p class="sub">The M.2 radio keeps the booth online (cloud sync, updates). The USB Wi-Fi
+        dongle runs the guest hotspot — so the booth works online <b>and</b> offline at once.</p>
+      <div id="netStatus" class="grid grid-cols-2 gap-3"></div>
+    </div>
+
+    <div class="card"><h2>🔌 Join a Wi-Fi network
+      <button class="btn btn-ghost btn-xs ml-auto" onclick="scanWifi()">🔍 Scan</button></h2>
+      <p class="sub">Connect the booth to the internet (the management radio). Changing this won't
+        affect the guest hotspot.</p>
+      <div id="wifiList" class="mt-1"></div>
+      <div class="grid2 mt-3 items-end">
+        <div><label class="fld">Network (SSID)</label><input type="text" id="joinSsid" placeholder="pick from the list or type"></div>
+        <div><label class="fld">Password</label><input type="password" id="joinPass" placeholder="leave blank if open"></div>
+      </div>
+      <div class="mt-2"><button class="btn" onclick="joinWifi()">Connect</button></div>
+    </div>
+
+    <div class="card"><h2>📡 Guest hotspot</h2>
+      <p class="sub">A private Wi-Fi guests join to get their photos with no internet. Runs on the
+        USB dongle so the booth stays online. Password must be at least 8 characters.</p>
+      <div class="toggle border-b border-slate-100">
+        <div><div class="t-txt">Hotspot</div><div id="hotspotState" class="t-sub">…</div></div>
+        <label class="sw"><input type="checkbox" id="hotspotToggle" onchange="toggleHotspot(this.checked)"><i></i></label>
+      </div>
+      <div class="grid2 mt-2">
+        <div><label class="fld">Network name (SSID)</label><input type="text" data-path="network.hotspot_ssid"></div>
+        <div><label class="fld">Password</label><input type="password" data-path="network.hotspot_password" placeholder="leave blank to keep"></div>
+      </div>
+      <div class="grid2 mt-1 items-center">
+        <div><label class="fld">Band</label><select data-path="network.hotspot_band">
+          <option value="bg">2.4 GHz (best range/compatibility)</option>
+          <option value="a">5 GHz (faster, shorter range)</option></select></div>
+        <div class="toggle"><div class="t-txt">Hidden SSID</div>
+          <label class="sw"><input type="checkbox" data-path="network.hotspot_hidden"><i></i></label></div>
+      </div>
+      <p class="text-xs text-slate-400 mt-2">Save your changes first, then toggle the hotspot on to apply them.</p>
     </div>
   </section>
 
@@ -383,7 +451,8 @@ function setPath(o,p,v){ const k=p.split("."); let c=o;
 /* ---- tabs ---- */
 const TABS = [
   ["status","📊 Status"],["trigger","🎬 Trigger"],["capture","📷 Capture"],
-  ["sharing","🔗 Sharing"],["effects","✨ Effects"],["general","🏷 General"],["gallery","🖼 Gallery"],
+  ["sharing","🔗 Sharing"],["effects","✨ Effects"],["network","📶 Network"],
+  ["general","🏷 General"],["gallery","🖼 Gallery"],
 ];
 function buildTabs(){
   $("#tabs").innerHTML = TABS.map(([k,l])=>`<button class="tab" data-tab="${k}" onclick="showTab('${k}')">${l}</button>`).join("");
@@ -393,6 +462,8 @@ function showTab(name){
   $$("[data-panel]").forEach(p=>p.style.display = p.dataset.panel===name ? "" : "none");
   try{ localStorage.setItem("booth_tab", name); }catch(e){}
   if(name==="trigger") startZonePreview();
+  if(name==="network"){ loadNet(); }
+  if(name==="sharing"){ loadSync(); }
   window.scrollTo({top:0,behavior:"instant"});
 }
 
@@ -551,8 +622,9 @@ async function delSession(s){ if(!confirm("Delete "+s+"?"))return;
   await fetch("/api/gallery/"+s,{method:"DELETE"}); loadGallery(); }
 async function loadFaceStatus(){
   try{ const j = await (await fetch("/api/faces/status")).json();
+    const dev = j.loaded ? (j.gpu ? " · 🟢 GPU" : " · 🟡 CPU") : "";
     $("#faceStatus").textContent = "Status: " + (j.available ? "🟢 ready" : "🔴 " + j.detail)
-      + ` · ${j.people} people / ${j.faces} faces indexed`;
+      + dev + ` · ${j.people} people / ${j.faces} faces indexed`;
   }catch(e){}
 }
 async function loadPeople(){
@@ -564,6 +636,66 @@ async function loadPeople(){
      <div class="text-xs text-slate-500">#${g.person} · ${g.count}</div></div>`).join("")
     || "<p class='text-slate-400 text-sm'>No people grouped yet.</p>";
 }
+
+/* ---- network ---- */
+async function loadNet(){
+  let j; try{ j = await (await fetch("/api/network/status")).json(); }catch(e){ return; }
+  const net = {full:"🟢 online", limited:"🟡 limited", none:"🔴 offline"}[j.internet] || j.internet;
+  const tile=(t,v)=>`<div class="card !mb-0"><div class="text-xs text-slate-400 mb-1">${t}</div><div class="text-sm font-semibold break-all">${v}</div></div>`;
+  const active = j.hotspot && j.hotspot.active;
+  $("#netStatus").innerHTML =
+    tile("Internet", net) +
+    tile("Connected to", j.mgmt_ssid || "—") +
+    tile("Hotspot radio", j.ap_device || "— plug in USB dongle") +
+    tile("Hotspot", active ? `🟢 on · ${j.hotspot.ssid}` : "○ off");
+  const t=$("#hotspotToggle");
+  if(t){ t.checked = !!active;
+    $("#hotspotState").textContent = active ? `Active — guests can join “${j.hotspot.ssid}”`
+      : (j.ap_device ? "Off — toggle on to start" : "Plug in the USB Wi-Fi dongle to enable"); }
+}
+async function scanWifi(){
+  $("#wifiList").innerHTML = "<p class='text-slate-400 text-sm'>Scanning…</p>";
+  const r = await fetch("/api/wifi/scan");
+  if(r.status===401){ $("#gate").style.display="flex"; return; }
+  const nets = await r.json();
+  $("#wifiList").innerHTML = nets.map(n=>{
+    const lock = n.security && n.security!=="open" ? "🔒" : "";
+    const bars = n.signal>66?"▂▄▆":n.signal>33?"▂▄ ":"▂  ";
+    return `<button class="w-full flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-slate-50 text-left"
+      onclick="pickWifi(this.dataset.ssid)" data-ssid="${n.ssid.replace(/"/g,'&quot;')}">
+      <span class="text-teal-600 font-mono">${bars}</span>
+      <span class="flex-1 truncate ${n.in_use?'font-bold':''}">${n.ssid}${n.in_use?' ✓':''}</span>
+      <span class="text-slate-400 text-xs">${lock} ${n.signal}%</span></button>`;
+  }).join("") || "<p class='text-slate-400 text-sm'>No networks found.</p>";
+}
+function pickWifi(ssid){ $("#joinSsid").value = ssid; $("#joinPass").focus(); }
+async function joinWifi(){
+  const ssid=$("#joinSsid").value.trim(); if(!ssid){ toast("Enter a network name", true); return; }
+  toast("Connecting to "+ssid+"…");
+  const r = await (await fetch("/api/wifi/connect",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({ssid, password:$("#joinPass").value})})).json();
+  toast(r.ok?("Connected to "+ssid+" ✓"):("Failed: "+(r.error||"")), !r.ok);
+  setTimeout(loadNet, 1500);
+}
+async function toggleHotspot(on){
+  toast(on?"Starting hotspot…":"Stopping hotspot…");
+  const r = await (await fetch("/api/hotspot",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({action:on?"up":"down"})})).json();
+  toast(r.ok?(on?"Hotspot on ✓":"Hotspot off"):("Hotspot: "+(r.error||"failed")), !r.ok);
+  setTimeout(loadNet, 1500);
+}
+
+/* ---- sync ---- */
+async function loadSync(){
+  let j; try{ j = await (await fetch("/api/sync/status")).json(); }catch(e){ return; }
+  let html = `<span class="pill">⏳ ${j.pending} pending</span> <span class="pill">✓ ${j.completed} done</span>`;
+  if(j.failing && j.failing.length){
+    html += "<div class='mt-2 text-xs text-amber-600'>" +
+      j.failing.map(f=>`↻ ${f.session}: ${f.error} (attempt ${f.attempts})`).join("<br>") + "</div>";
+  }
+  $("#syncStatus").innerHTML = html;
+}
+async function retrySync(){ await fetch("/api/sync/retry",{method:"POST"}); toast("Retrying queued uploads…"); setTimeout(loadSync,1000); }
 
 /* ---- toast ---- */
 let toastT;
@@ -578,8 +710,8 @@ function toast(msg, err){
 /* ---- init ---- */
 async function init(){
   SETTINGS = await (await fetch("/api/settings")).json();   // secrets masked
-  populate(); setupZoneDrag(); loadStatus(); loadGallery(); loadFaceStatus();
-  setInterval(loadStatus,5000);
+  populate(); setupZoneDrag(); loadStatus(); loadGallery(); loadFaceStatus(); loadSync();
+  setInterval(loadStatus,5000); setInterval(loadSync,8000);
   let tab="status"; try{ tab=localStorage.getItem("booth_tab")||"status"; }catch(e){}
   if(!TABS.some(t=>t[0]===tab)) tab="status";
   showTab(tab);

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 
 class GeneralSettings(BaseModel):
-    booth_name: str = "AI Photo Booth"
+    booth_name: str = "PhotoBooth Pro"
     # {gesture} = the selected gesture's emoji, {gesture_name} = its name (kiosk fills these in)
     welcome_message: str = "Show {gesture} to start!"
     thanks_message: str = "Thanks! Grab your photo 👇"
