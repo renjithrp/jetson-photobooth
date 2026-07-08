@@ -129,11 +129,14 @@ class CollageSettings(BaseModel):
 
 
 class AISettings(BaseModel):
-    """On-device AI effects via the RK3588 NPU (RKNN). Hook now, model later."""
+    """AI background effects via portrait segmentation (rembg + onnxruntime, GPU/CPU)."""
+    model_config = {"protected_namespaces": ()}
     enabled: bool = False
     effect: Literal["none", "bg_remove", "bg_replace"] = "none"
-    background_image: str = ""
-    rknn_model: str = ""                  # path to a .rknn segmentation model on the Pi
+    model: str = "u2net_human_seg"        # rembg model: u2net_human_seg / isnet-general-use / birefnet-portrait
+    use_gpu: bool = True
+    background_image: str = ""            # backdrop for bg_replace (falls back to colour)
+    background_color: str = "#ffffff"    # solid fill for bg_remove / when no backdrop image
 
 
 class PrintSettings(BaseModel):

@@ -81,23 +81,6 @@ def make_collage(paths: list[Path], settings: Settings, out_path: Path) -> Path:
 
 
 def apply_ai(img_path: Path, settings: Settings) -> None:
-    """On-device AI effect via the RK3588 NPU (RKNN). No-op until a model is set.
-
-    Wiring point for background removal/replacement. Convert a segmentation model
-    to .rknn with rknn-toolkit2 on a PC, run it here with rknn-toolkit-lite2.
-    """
-    ai = settings.ai
-    if not ai.enabled or ai.effect == "none":
-        return
-    model = ai.rknn_model
-    if not model or not Path(model).exists():
-        print(f"[ai] effect '{ai.effect}' requested but no RKNN model at '{model}'; skipping")
-        return
-    try:
-        # Placeholder for the real NPU pipeline:
-        #   from rknnlite.api import RKNNLite
-        #   rknn = RKNNLite(); rknn.load_rknn(model); rknn.init_runtime()
-        #   ... infer mask, composite background ...
-        print(f"[ai] (stub) would apply '{ai.effect}' using {model} to {img_path}")
-    except Exception as e:
-        print(f"[ai] effect failed: {e}")
+    """AI background remove/replace via GPU segmentation (see ai_effects)."""
+    from . import ai_effects
+    ai_effects.apply_background(img_path, settings)

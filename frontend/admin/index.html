@@ -358,17 +358,26 @@
       </div>
       <div class="mt-1"><label class="fld">Background color</label><input type="text" data-path="collage.background"></div>
     </div>
-    <div class="card"><h2>🧠 AI background (GPU)</h2>
-      <p class="sub">GPU portrait segmentation — drop the background or replace it with a virtual
-        backdrop. Model wiring lands in the AI features phase.</p>
+    <div class="card"><h2>🧠 AI background (GPU segmentation)</h2>
+      <p class="sub">Portrait segmentation drops the background or swaps in a virtual backdrop —
+        no green screen. Runs on the GPU (falls back to CPU).</p>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Enabled</div>
         <label class="sw"><input type="checkbox" data-path="ai.enabled"><i></i></label></div>
       <div class="grid2 mt-2">
         <div><label class="fld">Effect</label><select data-path="ai.effect">
-          <option value="none">none</option><option value="bg_remove">background remove</option>
-          <option value="bg_replace">background replace</option></select></div>
-        <div><label class="fld">Background image (replace)</label><input type="text" data-path="ai.background_image"></div>
+          <option value="none">none</option><option value="bg_remove">remove (solid colour)</option>
+          <option value="bg_replace">replace (backdrop)</option></select></div>
+        <div><label class="fld">Model</label><select data-path="ai.model">
+          <option value="u2net_human_seg">People (u2net_human_seg)</option>
+          <option value="birefnet-portrait">Portrait HQ (birefnet)</option>
+          <option value="isnet-general-use">General (isnet)</option></select></div>
       </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Backdrop image path (replace)</label><input type="text" data-path="ai.background_image"></div>
+        <div><label class="fld">Background colour (remove)</label><input type="text" data-path="ai.background_color" placeholder="#ffffff"></div>
+      </div>
+      <div class="toggle mt-1"><div class="t-txt">Use GPU</div>
+        <label class="sw"><input type="checkbox" data-path="ai.use_gpu"><i></i></label></div>
     </div>
     <div class="card"><h2>👥 Face grouping (InsightFace · GPU)</h2>
       <p id="faceStatus" class="sub">…</p>

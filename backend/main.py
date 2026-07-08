@@ -88,6 +88,9 @@ async def lifespan(app: FastAPI):
     sync_worker.start()                                # background uploads (offline-safe queue)
     if s.faces.enabled:                                # load the face model off the boot path
         threading.Thread(target=faces.warmup, args=(s,), daemon=True).start()
+    if s.ai.enabled:                                   # pre-load/fetch the segmentation model
+        from . import ai_effects
+        threading.Thread(target=ai_effects.warmup, args=(s,), daemon=True).start()
     log.info("ready at %s (admin: %s/admin)", base_url(), base_url())
     yield
     watchdog.stop()
