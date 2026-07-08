@@ -1,0 +1,23 @@
+# Unified Sony camera daemon: holds the single PC-Remote session and serves both
+# the live view (MJPEG on :8080/) AND capture (GET :8080/capture does AF + shutter +
+# download). The booth backend's hub consumes the live view; capture_service calls
+# /capture. This replaces the live-view-only server (no stop/start hand-off, no
+# preview pause beyond the moment of the shot).
+[Unit]
+Description=AI Photo Booth Sony camera daemon (live view + capture)
+After=network-online.target
+# Never give up restarting — when the camera is off/asleep the daemon exits with
+# "no camera"; keep retrying every few seconds until the camera returns.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/root/CrSDK/external/crsdk
+ExecStart=/root/CrSDK/external/crsdk/cameraDaemon
+# always (not on-failure): the daemon also exits cleanly when the camera disconnects,
+# and we want it to come straight back and reconnect (seamless plug-and-play).
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,25 @@
+# Guest captive-portal HTTP server (:80). Fires the phone's captive popup on join
+# (DNS is hijacked to the booth by captive-dnsmasq.conf) and serves the guest
+# find-your-photos page + downloads over plain HTTP, proxying the actual API/photo
+# routes to the main HTTPS backend on 127.0.0.1:8000. Runs as root to bind :80.
+# Enable with deploy/setup-captive.sh (only useful when the guest hotspot is up).
+[Unit]
+Description=AI Photo Booth guest captive portal (:80)
+After=network-online.target photobooth.service
+Wants=network-online.target
+# Never hit systemd's start-limit — if :80 is briefly taken during a restart, retry.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/photobooth
+Environment=BOOTH_BACKEND=https://127.0.0.1:8000
+Environment=BOOTH_AP_IP=192.168.50.1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/photobooth/venv/bin/uvicorn backend.captive:app --host 0.0.0.0 --port 80
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Find Your Photos</title>
+<style>
+  :root { --bg:#0d0f14; --card:#171a21; --fg:#f1f3f7; --mut:#9aa3b2; --accent:#5b8cff; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         background:var(--bg); color:var(--fg); margin:0; padding:20px 16px 40px;
+         min-height:100vh; text-align:center; }
+  h1 { font-weight:700; font-size:1.6rem; margin:8px 0 4px; }
+  p.sub { color:var(--mut); margin:0 0 22px; font-size:.95rem; }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:10px;
+         background:var(--accent); color:#fff; border:none; border-radius:14px;
+         font-size:1.1rem; font-weight:600; padding:16px 24px; cursor:pointer;
+         box-shadow:0 8px 24px #5b8cff44; width:100%; max-width:380px; }
+  .btn:active { transform:scale(.98); }
+  .btn.secondary { background:#262b36; box-shadow:none; margin-top:12px; }
+  .hint { color:var(--mut); margin:18px auto 0; max-width:380px; min-height:1.4em;
+          font-size:.95rem; }
+  .hint.err { color:#ff8a8a; }
+  .spinner { width:18px; height:18px; border:3px solid #ffffff55; border-top-color:#fff;
+             border-radius:50%; animation:spin .8s linear infinite; display:inline-block;
+             vertical-align:-3px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px;
+          max-width:600px; margin:24px auto 0; }
+  .grid a { display:block; position:relative; }
+  .grid img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:12px;
+              box-shadow:0 6px 20px #0008; }
+  .grid a::after { content:"⬇ Save"; position:absolute; left:8px; bottom:8px;
+                   background:#000a; color:#fff; font-size:.75rem; font-weight:600;
+                   padding:4px 8px; border-radius:8px; }
+  .count { margin:22px 0 0; font-weight:600; }
+  footer { color:var(--mut); font-size:.8rem; margin-top:34px; }
+</style>
+</head>
+<body>
+  <h1>📸 Find your photos</h1>
+  <p class="sub">Take a quick selfie and we'll find every photo you're in.</p>
+
+  <button class="btn" id="findBtn">📷 Take a selfie</button>
+  <input type="file" accept="image/*" capture="user" id="selfie" style="display:none">
+
+  <div class="hint" id="hint"></div>
+
+  <div class="count" id="count" style="display:none"></div>
+  <div class="grid" id="grid"></div>
+
+  <footer>Tap any photo to save it to your phone.</footer>
+
+<script>
+const L = id => document.getElementById(id);
+function hint(msg, busy, err) {
+  const h = L("hint");
+  h.className = "hint" + (err ? " err" : "");
+  h.innerHTML = busy ? `<span class="spinner"></span> ${msg}` : (msg || "");
+}
+
+// Hide the feature gracefully if face-grouping isn't available on this booth.
+(async () => {
+  try {
+    const s = await (await fetch("/api/faces/status")).json();
+    if (!(s.enabled && s.available)) {
+      L("findBtn").style.display = "none";
+      hint("Find-your-photos isn't enabled on this booth — please ask staff.");
+    }
+  } catch (e) {}
+})();
+
+L("findBtn").onclick = () => L("selfie").click();
+
+L("selfie").onchange = async () => {
+  const f = L("selfie").files[0];
+  if (!f) return;
+  hint("Finding your photos…", true);
+  L("count").style.display = "none";
+  L("grid").innerHTML = "";
+  const fd = new FormData();
+  fd.append("selfie", f);
+  try {
+    const r = await (await fetch("/api/faces/find", { method: "POST", body: fd })).json();
+    if (r.matched && r.photos && r.photos.length) {
+      hint("");
+      L("count").textContent = `Found ${r.photos.length} photo${r.photos.length > 1 ? "s" : ""} of you 🎉`;
+      L("count").style.display = "block";
+      L("grid").innerHTML = r.photos
+        .map(u => `<a href="${u}" download><img src="${u}" loading="lazy"></a>`)
+        .join("");
+    } else {
+      hint(r.error || "No match yet — try a clearer, well-lit selfie.", false, true);
+    }
+  } catch (e) {
+    hint("Something went wrong — please try again.", false, true);
+  }
+  L("selfie").value = "";
+};
+</script>
+</body>
+</html>

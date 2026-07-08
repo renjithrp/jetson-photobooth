@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<title>Photo Booth — Admin</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{ --teal:#0f766e; --teal2:#0d9488; }
+  *{ -webkit-tap-highlight-color: transparent; }
+  body{ font-family: ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  label.fld{ display:block; font-size:.78rem; font-weight:600; color:#64748b; margin-bottom:.25rem; }
+  input[type=text],input[type=number],input[type=password],select{
+    width:100%; border:1px solid #e2e8f0; background:#f8fafc; border-radius:.6rem;
+    padding:.55rem .7rem; font-size:.9rem; color:#0f172a; transition:.15s; }
+  input:focus,select:focus{ outline:none; border-color:var(--teal2);
+    background:#fff; box-shadow:0 0 0 3px rgba(13,148,136,.15); }
+  .card{ background:#fff; border:1px solid #eef2f6; border-radius:1rem;
+    box-shadow:0 1px 2px rgba(15,23,42,.04); padding:1.1rem 1.15rem; margin-bottom:1rem; }
+  .card h2{ font-size:1rem; font-weight:700; color:#0f172a; margin-bottom:.15rem;
+    display:flex; align-items:center; gap:.5rem; }
+  .card .sub{ font-size:.8rem; color:#94a3b8; margin-bottom:.9rem; }
+  .grid2{ display:grid; grid-template-columns:1fr; gap:.85rem; }
+  @media(min-width:560px){ .grid2{ grid-template-columns:1fr 1fr; } }
+  .grid4{ display:grid; grid-template-columns:1fr 1fr; gap:.6rem; }
+  @media(min-width:560px){ .grid4{ grid-template-columns:repeat(4,1fr); } }
+  .subhead{ font-size:.72rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+    color:#94a3b8; margin:1.1rem 0 .5rem; }
+  /* toggle switch */
+  .toggle{ display:flex; align-items:center; justify-content:space-between; gap:1rem;
+    padding:.55rem 0; }
+  .toggle .t-txt{ font-size:.9rem; color:#0f172a; }
+  .toggle .t-sub{ font-size:.75rem; color:#94a3b8; }
+  .sw{ position:relative; flex:0 0 auto; width:44px; height:26px; }
+  .sw input{ opacity:0; width:0; height:0; position:absolute; }
+  .sw i{ position:absolute; inset:0; background:#cbd5e1; border-radius:999px; transition:.2s; }
+  .sw i:before{ content:""; position:absolute; width:20px; height:20px; left:3px; top:3px;
+    background:#fff; border-radius:50%; transition:.2s; box-shadow:0 1px 2px rgba(0,0,0,.2); }
+  .sw input:checked + i{ background:var(--teal2); }
+  .sw input:checked + i:before{ transform:translateX(18px); }
+  /* buttons */
+  .btn{ display:inline-flex; align-items:center; gap:.4rem; justify-content:center;
+    padding:.55rem .9rem; border-radius:.6rem; font-weight:600; font-size:.85rem;
+    color:#fff; background:var(--teal); cursor:pointer; border:none; transition:.15s; }
+  .btn:hover{ background:#0b5e57; }
+  .btn-ghost{ background:#fff; color:#334155; border:1px solid #e2e8f0; }
+  .btn-ghost:hover{ background:#f1f5f9; }
+  .btn-red{ background:#ef4444; } .btn-red:hover{ background:#dc2626; }
+  .btn-xs{ padding:.35rem .6rem; font-size:.75rem; }
+  /* tabs */
+  .tabs{ display:flex; gap:.4rem; overflow-x:auto; scrollbar-width:none; padding:.1rem; }
+  .tabs::-webkit-scrollbar{ display:none; }
+  .tab{ flex:0 0 auto; padding:.5rem .85rem; border-radius:999px; font-size:.85rem;
+    font-weight:600; color:#475569; background:#fff; border:1px solid #e2e8f0; cursor:pointer;
+    white-space:nowrap; transition:.15s; }
+  .tab.active{ color:#fff; background:var(--teal); border-color:var(--teal); }
+  /* zone picker */
+  #zoneWrap{ position:relative; width:100%; aspect-ratio:4/3; background:#0f172a;
+    border-radius:.8rem; overflow:hidden; touch-action:none; }
+  #zonePreview{ width:100%; height:100%; object-fit:cover; opacity:.9; }
+  #zoneBox{ position:absolute; border:2.5px solid #2dd4bf; border-radius:.4rem;
+    box-shadow:0 0 0 9999px rgba(2,6,23,.45); }
+  #zoneBox .lab{ position:absolute; top:-1.4rem; left:0; font-size:.7rem; font-weight:700;
+    color:#2dd4bf; background:rgba(2,6,23,.6); padding:.05rem .35rem; border-radius:.3rem; }
+  #zoneBox.editable{ cursor:move; border-style:dashed; }
+  #zoneHandle{ position:absolute; right:-9px; bottom:-9px; width:18px; height:18px;
+    background:#2dd4bf; border:2px solid #fff; border-radius:50%; display:none; cursor:nwse-resize; }
+  #zoneBox.editable #zoneHandle{ display:block; }
+  .pill{ display:inline-flex; align-items:center; gap:.35rem; font-size:.78rem; font-weight:600;
+    padding:.2rem .55rem; border-radius:999px; background:#f1f5f9; color:#475569; }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+<!-- ===== Login gate ===== -->
+<div id="gate" class="fixed inset-0 bg-slate-900/95 flex items-center justify-center z-50 px-5">
+  <div class="bg-white rounded-2xl p-7 w-full max-w-xs text-center shadow-2xl">
+    <div class="text-4xl mb-2">📸</div>
+    <h1 class="text-lg font-bold mb-1">Photo Booth Admin</h1>
+    <p class="text-sm text-slate-400 mb-4">Enter your PIN to continue</p>
+    <input id="pin" type="password" inputmode="numeric" placeholder="••••" class="text-center text-xl tracking-widest mb-3">
+    <button class="btn w-full justify-center" onclick="unlock()">Unlock</button>
+    <p id="pinerr" class="text-red-500 text-sm mt-2 h-4"></p>
+  </div>
+</div>
+
+<!-- ===== App bar ===== -->
+<header class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-slate-200">
+  <div class="max-w-4xl mx-auto px-4 py-2.5 flex items-center gap-3">
+    <div class="text-xl">📸</div>
+    <div class="min-w-0">
+      <div id="barName" class="font-bold leading-tight truncate">Photo Booth</div>
+      <div id="barState" class="text-xs text-slate-400 leading-tight">connecting…</div>
+    </div>
+    <div class="ml-auto flex items-center gap-2">
+      <button class="btn btn-ghost btn-xs" onclick="capture()">📷 Test</button>
+      <button class="btn btn-xs" id="saveBtn" onclick="save()">💾 Save</button>
+    </div>
+  </div>
+  <div class="max-w-4xl mx-auto px-3 pb-2">
+    <nav class="tabs" id="tabs"></nav>
+  </div>
+</header>
+
+<main class="max-w-4xl mx-auto p-4 pb-24">
+
+  <!-- ============ STATUS ============ -->
+  <section data-panel="status">
+    <div id="status" class="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4"></div>
+    <div class="card"><h2>⚙️ System control</h2>
+      <p class="sub">Restart a service if something gets stuck. The app restarts in the background — this page reconnects in a few seconds.</p>
+      <div class="flex flex-wrap gap-2">
+        <button class="btn btn-ghost" onclick="svc('photobooth','restart')">↻ Restart app</button>
+        <button class="btn btn-ghost" onclick="svc('photobooth-liveview','restart')">↻ Restart camera</button>
+        <button class="btn btn-ghost" onclick="svc('photobooth-kiosk','restart')">↻ Restart kiosk</button>
+        <button class="btn btn-ghost" onclick="svc('photobooth-kiosk','stop')">■ Stop kiosk</button>
+        <button class="btn btn-ghost" onclick="svc('photobooth-kiosk','start')">▶ Start kiosk</button>
+      </div>
+      <p class="mt-3 text-sm text-slate-500">📱 Capture from your phone:
+        <a class="text-teal-600 font-semibold underline" href="/control" target="_blank">open remote control →</a></p>
+    </div>
+  </section>
+
+  <!-- ============ TRIGGER ============ -->
+  <section data-panel="trigger" style="display:none">
+    <div class="card"><h2>🎬 How a photo is triggered</h2>
+      <p class="sub">Choose what starts a capture. Gesture watches the live camera for a hand sign; GPIO is a physical button.</p>
+      <div class="grid2">
+        <div><label class="fld">Trigger mode</label><select data-path="trigger.mode">
+          <option value="gesture">✋ Hand gesture</option>
+          <option value="gpio">🔘 Physical button (GPIO)</option>
+          <option value="both">Both</option></select></div>
+        <div><label class="fld">Cooldown after a photo (s)</label>
+          <input type="number" data-float step="0.5" data-path="trigger.cooldown_seconds"></div>
+      </div>
+    </div>
+
+    <div class="card"><h2>✋ Gesture</h2>
+      <p class="sub">The hand sign guests show to start. Hold it briefly to avoid accidental triggers.</p>
+      <div class="grid2">
+        <div><label class="fld">Gesture</label><select data-path="trigger.gesture_type">
+          <option value="open_palm">✋ Open palm</option><option value="fist">✊ Fist</option>
+          <option value="peace">✌️ Peace</option><option value="thumbs_up">👍 Thumbs up</option>
+          <option value="three">🤟 Three fingers</option><option value="rock">🤘 Rock</option>
+          <option value="one">☝️ Point up</option><option value="pinky">🤙 Pinky</option>
+          <option value="call_me">🤙 Call me</option><option value="love">🤟 Love</option>
+          <option value="any_hand">🖐 Any hand</option></select></div>
+        <div><label class="fld">Hold for (s)</label>
+          <input type="number" data-float step="0.5" data-path="trigger.gesture_hold_seconds"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Start delay after gesture (s)</label>
+          <input type="number" data-float step="0.5" data-path="trigger.gesture_start_delay"></div>
+      </div>
+    </div>
+
+    <!-- Face gating -->
+    <div class="card"><h2>🙂 Require a face in the zone</h2>
+      <p class="sub">Stops the booth firing when no one is actually in front of it. When on, a gesture only counts if a face is detected inside the target zone below.</p>
+      <div class="toggle border-b border-slate-100">
+        <div><div class="t-txt">Require a face to be present</div>
+          <div class="t-sub">Hand gesture <b>and</b> a face inside the zone</div></div>
+        <label class="sw"><input type="checkbox" data-path="trigger.require_face"><i></i></label>
+      </div>
+      <div id="zoneWrap-outer" class="mt-3">
+        <div class="grid2 items-end mb-3">
+          <div><label class="fld">Zone shape</label><select data-path="trigger.face_region">
+            <option value="center_square">⬛ Centre square</option>
+            <option value="center_wide">▭ Centre wide</option>
+            <option value="full">⬜ Whole frame</option>
+            <option value="custom">✎ Custom (drag below)</option></select></div>
+          <div><label class="fld">Min face size (0 = any)</label>
+            <input type="number" data-float step="0.02" data-path="trigger.face_min_size"></div>
+        </div>
+        <p class="text-xs text-slate-400 mb-2">Live preview — the highlighted area is where a face must appear. In <b>Custom</b> mode, drag the box to move it and drag the corner to resize.</p>
+        <div id="zoneWrap">
+          <img id="zonePreview" alt="live preview">
+          <div id="zoneBox"><span class="lab">FACE ZONE</span><div id="zoneHandle"></div></div>
+        </div>
+        <div id="zoneCustom" class="grid4 mt-3" style="display:none">
+          <div><label class="fld">X</label><input type="number" data-float step="0.01" data-path="trigger.face_region_x"></div>
+          <div><label class="fld">Y</label><input type="number" data-float step="0.01" data-path="trigger.face_region_y"></div>
+          <div><label class="fld">Width</label><input type="number" data-float step="0.01" data-path="trigger.face_region_w"></div>
+          <div><label class="fld">Height</label><input type="number" data-float step="0.01" data-path="trigger.face_region_h"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card"><h2>🔘 Physical button (GPIO)</h2>
+      <p class="sub">Only used when the trigger mode includes GPIO.</p>
+      <div class="grid2">
+        <div><label class="fld">Chip</label><input type="text" data-path="trigger.gpio_chip"></div>
+        <div><label class="fld">Line</label><input type="number" data-path="trigger.gpio_line"></div>
+      </div>
+      <div class="grid2 mt-1 items-center">
+        <div class="toggle"><div class="t-txt">Active low</div>
+          <label class="sw"><input type="checkbox" data-path="trigger.gpio_active_low"><i></i></label></div>
+        <div><label class="fld">Debounce (ms)</label><input type="number" data-path="trigger.gpio_debounce_ms"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CAPTURE ============ -->
+  <section data-panel="capture" style="display:none">
+    <div class="card"><h2>⏱ Timing</h2>
+      <div class="grid2">
+        <div><label class="fld">Countdown (s)</label><input type="number" data-path="timer.countdown_seconds"></div>
+        <div><label class="fld">Number of shots</label><input type="number" data-path="timer.num_shots"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Interval between shots (s)</label><input type="number" data-float step="0.5" data-path="timer.interval_seconds"></div>
+        <div><label class="fld">Review time (s)</label><input type="number" data-path="timer.review_seconds"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Attract screen after idle (s)</label><input type="number" data-path="timer.attract_after_seconds"></div>
+      </div>
+    </div>
+    <div class="card"><h2>📷 Camera</h2>
+      <div class="grid2">
+        <div><label class="fld">Backend</label><select data-path="camera.backend">
+          <option>mock</option><option>sony</option><option>webcam</option></select></div>
+        <div><label class="fld">Transfer size (Sony)</label><select data-path="camera.transfer_size">
+          <option>small</option><option>original</option></select></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Capture binary</label><input type="text" data-path="camera.capture_binary"></div>
+        <div><label class="fld">Capture output dir</label><input type="text" data-path="camera.capture_output_dir"></div>
+      </div>
+    </div>
+    <div class="card"><h2>🖥 Live preview</h2>
+      <div class="toggle border-b border-slate-100"><div class="t-txt">Preview enabled</div>
+        <label class="sw"><input type="checkbox" data-path="preview.enabled"><i></i></label></div>
+      <div class="grid2 mt-2">
+        <div><label class="fld">Source</label><select data-path="preview.source">
+          <option>mock</option><option>webcam</option><option>sony_http</option></select></div>
+        <div><label class="fld">Webcam index</label><input type="number" data-path="preview.webcam_index"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Sony live-view URL</label><input type="text" data-path="preview.sony_http_url"></div>
+        <div><label class="fld">FPS</label><input type="number" data-path="preview.fps"></div>
+      </div>
+      <div class="toggle mt-1"><div class="t-txt">Mirror preview</div>
+        <label class="sw"><input type="checkbox" data-path="preview.mirror"><i></i></label></div>
+    </div>
+  </section>
+
+  <!-- ============ SHARING ============ -->
+  <section data-panel="sharing" style="display:none">
+    <div class="card"><h2>💾 Storage</h2>
+      <div class="grid2">
+        <div><label class="fld">Local folder</label><input type="text" data-path="storage.local_dir"></div>
+        <div><label class="fld">Max sessions kept (0 = ∞)</label><input type="number" data-path="storage.max_local_sessions"></div>
+      </div>
+      <div class="toggle mt-1"><div class="t-txt">Keep local copies</div>
+        <label class="sw"><input type="checkbox" data-path="storage.keep_local"><i></i></label></div>
+    </div>
+    <div class="card"><h2>☁️ Google Drive
+      <button class="btn btn-ghost btn-xs ml-auto" onclick="testGdrive()">Test</button></h2>
+      <div class="toggle border-b border-slate-100"><div class="t-txt">Upload to Google Drive (rclone)</div>
+        <label class="sw"><input type="checkbox" data-path="storage.gdrive.enabled"><i></i></label></div>
+      <div class="grid2 mt-2">
+        <div><label class="fld">rclone remote</label><input type="text" data-path="storage.gdrive.rclone_remote"></div>
+        <div><label class="fld">Folder</label><input type="text" data-path="storage.gdrive.folder"></div>
+      </div>
+      <div class="toggle mt-1"><div class="t-txt">Create share links (for QR)</div>
+        <label class="sw"><input type="checkbox" data-path="storage.gdrive.make_share_link"><i></i></label></div>
+    </div>
+    <div class="card"><h2>🗄 FTP
+      <button class="btn btn-ghost btn-xs ml-auto" onclick="testFtp()">Test</button></h2>
+      <div class="toggle border-b border-slate-100"><div class="t-txt">Upload to FTP</div>
+        <label class="sw"><input type="checkbox" data-path="storage.ftp.enabled"><i></i></label></div>
+      <div class="grid2 mt-2">
+        <div><label class="fld">Host</label><input type="text" data-path="storage.ftp.host"></div>
+        <div><label class="fld">Port</label><input type="number" data-path="storage.ftp.port"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Username</label><input type="text" data-path="storage.ftp.username"></div>
+        <div><label class="fld">Password</label><input type="password" data-path="storage.ftp.password" placeholder="leave blank to keep"></div>
+      </div>
+      <div class="mt-1"><label class="fld">Remote dir</label><input type="text" data-path="storage.ftp.remote_dir"></div>
+      <div class="grid2 mt-2">
+        <div class="toggle"><div class="t-txt">Use TLS (FTPS)</div>
+          <label class="sw"><input type="checkbox" data-path="storage.ftp.use_tls"><i></i></label></div>
+        <div class="toggle"><div class="t-txt">Passive mode</div>
+          <label class="sw"><input type="checkbox" data-path="storage.ftp.passive"><i></i></label></div>
+      </div>
+    </div>
+    <div class="card"><h2>🔗 Share / QR</h2>
+      <div class="toggle border-b border-slate-100"><div class="t-txt">Show QR code after capture</div>
+        <label class="sw"><input type="checkbox" data-path="share.qr_enabled"><i></i></label></div>
+      <div class="mt-2"><label class="fld">Public base URL (blank = auto)</label><input type="text" data-path="share.base_url"></div>
+    </div>
+  </section>
+
+  <!-- ============ EFFECTS ============ -->
+  <section data-panel="effects" style="display:none">
+    <div class="card"><h2>🖼 Overlay &amp; collage</h2>
+      <div class="toggle border-b border-slate-100"><div class="t-txt">Overlay enabled</div>
+        <label class="sw"><input type="checkbox" data-path="overlay.enabled"><i></i></label></div>
+      <div class="grid2 mt-2">
+        <div><label class="fld">Frame PNG path</label><input type="text" data-path="overlay.frame_png"></div>
+        <div><label class="fld">Logo PNG path</label><input type="text" data-path="overlay.logo_png"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Logo position</label><select data-path="overlay.logo_position">
+          <option value="tl">top-left</option><option value="tr">top-right</option>
+          <option value="bl">bottom-left</option><option value="br">bottom-right</option></select></div>
+        <div><label class="fld">Apply to</label><select data-path="overlay.apply_to">
+          <option>each</option><option>collage</option><option>both</option></select></div>
+      </div>
+      <div class="toggle mt-2 border-t border-slate-100"><div class="t-txt">Collage (multi-shot)</div>
+        <label class="sw"><input type="checkbox" data-path="collage.enabled"><i></i></label></div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Layout</label><select data-path="collage.layout">
+          <option>grid_2x2</option><option>strip_vertical</option><option>strip_horizontal</option></select></div>
+        <div><label class="fld">Gap (px)</label><input type="number" data-path="collage.gap_px"></div>
+      </div>
+      <div class="mt-1"><label class="fld">Background color</label><input type="text" data-path="collage.background"></div>
+    </div>
+    <div class="card"><h2>🧠 AI effects (RK3588 NPU)</h2>
+      <div class="toggle border-b border-slate-100"><div class="t-txt">Enabled</div>
+        <label class="sw"><input type="checkbox" data-path="ai.enabled"><i></i></label></div>
+      <div class="grid2 mt-2">
+        <div><label class="fld">Effect</label><select data-path="ai.effect">
+          <option>none</option><option>bg_remove</option><option>bg_replace</option></select></div>
+        <div><label class="fld">RKNN model path</label><input type="text" data-path="ai.rknn_model"></div>
+      </div>
+      <div class="mt-1"><label class="fld">Background image (bg_replace)</label><input type="text" data-path="ai.background_image"></div>
+    </div>
+    <div class="card"><h2>👥 Face grouping (RK3588 NPU)</h2>
+      <p id="faceStatus" class="sub">…</p>
+      <div class="toggle border-b border-slate-100"><div class="t-txt">Group photos by face</div>
+        <label class="sw"><input type="checkbox" data-path="faces.enabled"><i></i></label></div>
+      <div class="grid2 mt-2">
+        <div><label class="fld">Engine</label><select data-path="faces.engine"><option>rknn</option><option>off</option></select></div>
+        <div><label class="fld">Match threshold (higher = stricter)</label><input type="number" data-float step="0.01" data-path="faces.match_threshold"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">ArcFace .rknn model path</label><input type="text" data-path="faces.rknn_model"></div>
+        <div><label class="fld">Min face size (px)</label><input type="number" data-path="faces.min_face_px"></div>
+      </div>
+      <div class="toggle mt-1"><div class="t-txt">Allow guests "find my photos" (selfie)</div>
+        <label class="sw"><input type="checkbox" data-path="faces.allow_guest_find"><i></i></label></div>
+      <div class="mt-2"><button class="btn btn-ghost btn-xs" onclick="loadPeople()">Show people</button></div>
+      <div id="people" class="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-3"></div>
+    </div>
+  </section>
+
+  <!-- ============ GENERAL ============ -->
+  <section data-panel="general" style="display:none">
+    <div class="card"><h2>🏷 Branding</h2>
+      <div class="grid2">
+        <div><label class="fld">Booth name</label><input type="text" data-path="general.booth_name"></div>
+        <div><label class="fld">Admin PIN</label><input type="text" data-path="general.admin_pin" placeholder="leave blank to keep"></div>
+      </div>
+      <div class="mt-2"><label class="fld">Welcome message</label><input type="text" data-path="general.welcome_message"></div>
+      <div class="mt-2"><label class="fld">Thanks message</label><input type="text" data-path="general.thanks_message"></div>
+      <div class="toggle mt-2"><div class="t-txt">Show admin URL on kiosk</div>
+        <label class="sw"><input type="checkbox" data-path="general.show_ip_overlay"><i></i></label></div>
+    </div>
+  </section>
+
+  <!-- ============ GALLERY ============ -->
+  <section data-panel="gallery" style="display:none">
+    <div class="card"><h2>🖼 Gallery
+      <button class="btn btn-ghost btn-xs ml-auto" onclick="loadGallery()">↻ Refresh</button></h2>
+      <div id="gallery" class="grid grid-cols-3 sm:grid-cols-5 gap-3 mt-2"></div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+let SETTINGS = {};
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const getPath = (o,p)=>p.split(".").reduce((a,k)=>a&&a[k],o);
+function setPath(o,p,v){ const k=p.split("."); let c=o;
+  for(let i=0;i<k.length-1;i++){ c[k[i]]=c[k[i]]||{}; c=c[k[i]]; } c[k[k.length-1]]=v; }
+
+/* ---- tabs ---- */
+const TABS = [
+  ["status","📊 Status"],["trigger","🎬 Trigger"],["capture","📷 Capture"],
+  ["sharing","🔗 Sharing"],["effects","✨ Effects"],["general","🏷 General"],["gallery","🖼 Gallery"],
+];
+function buildTabs(){
+  $("#tabs").innerHTML = TABS.map(([k,l])=>`<button class="tab" data-tab="${k}" onclick="showTab('${k}')">${l}</button>`).join("");
+}
+function showTab(name){
+  $$(".tab").forEach(t=>t.classList.toggle("active", t.dataset.tab===name));
+  $$("[data-panel]").forEach(p=>p.style.display = p.dataset.panel===name ? "" : "none");
+  try{ localStorage.setItem("booth_tab", name); }catch(e){}
+  if(name==="trigger") startZonePreview();
+  window.scrollTo({top:0,behavior:"instant"});
+}
+
+/* ---- login ---- */
+async function unlock(){
+  const pin = $("#pin").value;
+  const r = await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({pin})});
+  if (r.ok){ $("#gate").style.display="none"; init(); }
+  else { $("#pinerr").textContent = "Wrong PIN"; }
+}
+$("#pin").addEventListener("keydown", e => { if(e.key==="Enter") unlock(); });
+
+/* ---- settings bind ---- */
+function populate(){
+  $$("[data-path]").forEach(el=>{
+    const v = getPath(SETTINGS, el.dataset.path);
+    if (v===undefined||v===null) return;
+    if (el.type==="checkbox") el.checked = !!v; else el.value = v;
+  });
+  $("#barName").textContent = getPath(SETTINGS,"general.booth_name") || "Photo Booth";
+  renderZone();
+}
+function collect(){
+  const out = {};
+  $$("[data-path]").forEach(el=>{
+    let v;
+    if (el.type==="checkbox") v = el.checked;
+    else if (el.type==="number") v = el.hasAttribute("data-float") ? parseFloat(el.value) : parseInt(el.value,10);
+    else v = el.value;
+    if (el.type==="number" && Number.isNaN(v)) v = 0;
+    setPath(out, el.dataset.path, v);
+  });
+  return out;
+}
+async function save(){
+  $("#saveBtn").textContent="Saving…";
+  const r = await fetch("/api/settings",{method:"PUT",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(collect())});
+  $("#saveBtn").textContent="💾 Save";
+  if (r.status === 401){ $("#gate").style.display="flex"; toast("Session expired — log in again", true); return; }
+  if (r.ok){ SETTINGS = await r.json(); populate(); toast("Saved ✓"); }
+  else { toast("Save failed: "+(await r.text()), true); }
+}
+
+/* ---- face zone picker ---- */
+const ZONE_PRESETS = { full:[0,0,1,1], center_square:[0.30,0.12,0.40,0.76], center_wide:[0.12,0.12,0.76,0.76] };
+const zSel = ()=>$('[data-path="trigger.face_region"]');
+const zReq = ()=>$('[data-path="trigger.require_face"]');
+function zoneCoords(){
+  const preset = zSel().value;
+  if(preset!=="custom") return ZONE_PRESETS[preset]||ZONE_PRESETS.center_square;
+  return ["x","y","w","h"].map(k=>{ const v=parseFloat($(`[data-path="trigger.face_region_${k}"]`).value); return Number.isNaN(v)?0:v; });
+}
+function setCustom(x,y,w,h){
+  const set=(k,v)=>{ $(`[data-path="trigger.face_region_${k}"]`).value = (+v).toFixed(3); };
+  set("x",x);set("y",y);set("w",w);set("h",h); renderZone();
+}
+function renderZone(){
+  const box=$("#zoneBox"); if(!box) return;
+  let [x,y,w,h]=zoneCoords();
+  box.style.left=(x*100)+"%"; box.style.top=(y*100)+"%";
+  box.style.width=(w*100)+"%"; box.style.height=(h*100)+"%";
+  const custom = zSel().value==="custom";
+  box.classList.toggle("editable", custom);
+  $("#zoneCustom").style.display = custom ? "" : "none";
+  const on = zReq().checked;
+  $("#zoneWrap-outer").style.opacity = on ? 1 : .5;
+  $("#zoneWrap-outer").style.pointerEvents = on ? "auto" : "none";
+}
+let zoneStarted=false;
+function startZonePreview(){
+  const img=$("#zonePreview"); if(!img) return;
+  if(!zoneStarted){ zoneStarted=true;
+    img.onerror=()=>{ setTimeout(()=>{ img.src="/api/preview/stream?t="+Date.now(); },1500); }; }
+  img.src="/api/preview/stream?t="+Date.now();
+}
+function setupZoneDrag(){
+  const wrap=$("#zoneWrap"), box=$("#zoneBox"), handle=$("#zoneHandle");
+  if(!wrap) return;
+  let mode=null, sx,sy, start;
+  const rect=()=>wrap.getBoundingClientRect();
+  const pt=e=>{ const r=rect(); return [(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height]; };
+  const down=m=>e=>{
+    if(zSel().value!=="custom"||!zReq().checked) return;
+    e.preventDefault(); e.stopPropagation(); mode=m;
+    const [px,py]=pt(e); sx=px; sy=py; start=zoneCoords();
+    window.addEventListener("pointermove",move); window.addEventListener("pointerup",up);
+  };
+  function move(e){
+    if(!mode) return; const [px,py]=pt(e); let [x,y,w,h]=start;
+    const dx=px-sx, dy=py-sy;
+    if(mode==="move"){ x=clamp(x+dx,0,1-w); y=clamp(y+dy,0,1-h); }
+    else { w=clamp(w+dx,0.05,1-x); h=clamp(h+dy,0.05,1-y); }
+    setCustom(x,y,w,h);
+  }
+  function up(){ mode=null; window.removeEventListener("pointermove",move); window.removeEventListener("pointerup",up); }
+  box.addEventListener("pointerdown",down("move"));
+  handle.addEventListener("pointerdown",down("resize"));
+  zSel().addEventListener("change",renderZone);
+  zReq().addEventListener("change",renderZone);
+  ["x","y","w","h"].forEach(k=>$(`[data-path="trigger.face_region_${k}"]`).addEventListener("input",renderZone));
+}
+
+/* ---- status ---- */
+async function loadStatus(){
+  let j; try{ j = await (await fetch("/api/system/info")).json(); }catch(e){ return; }
+  $("#barState").textContent = (j.busy?"● busy":"● idle") + " · " + j.trigger_mode + (j.require_face?" + face":"");
+  const cam = j.camera.ok ? `<span class="text-emerald-600">🟢 ${j.camera.backend}</span>`
+    : `<span class="text-red-500">🔴 ${j.camera.backend}</span> <span class="text-slate-400">${j.camera.detail||""}</span>`;
+  const cs = j.camera_stream;
+  let stream;
+  if(cs == null) stream = j.daemon_connected===null ? "—" : (j.daemon_connected ? "🟢 connected" : "🔴 offline");
+  else if(cs.streaming) stream = `<span class="text-emerald-600">🟢 streaming · ${cs.fps} fps</span>`;
+  else if(cs.connected) stream = `<span class="text-amber-500">🟡 up, no frames…</span>`;
+  else stream = `<span class="text-red-500">🔴 offline</span>`;
+  if(j.watchdog_restarts) stream += ` <span class="text-slate-400 text-xs">(auto-healed ${j.watchdog_restarts}×)</span>`;
+  const disk = j.disk ? `${j.disk.free_gb} GB free · ${j.disk.used_pct}% used` : "—";
+  const tile=(t,v)=>`<div class="card !mb-0"><div class="text-xs text-slate-400 mb-1">${t}</div><div class="text-sm font-semibold break-all">${v}</div></div>`;
+  $("#status").innerHTML =
+    tile("State", `${j.busy?"Busy":"Idle"}`) +
+    tile("Camera", cam) +
+    tile("Live view", stream) +
+    tile("Trigger", `${j.trigger_mode}${j.require_face?" + face zone":""}`) +
+    tile("Disk", disk) +
+    tile("Host", `${j.hostname} · v${j.version}`) +
+    tile("Admin URL", `<span class="font-mono text-xs">${j.admin_url}</span>`);
+}
+
+/* ---- actions ---- */
+async function capture(){ const r = await (await fetch("/api/capture",{method:"POST"})).json();
+  toast(r.ok?"Capture started":"Booth busy", !r.ok); }
+async function svc(service, action){
+  if(!confirm(action + " " + service + "?")) return;
+  toast(action + "ing " + service + "…");
+  try{
+    const r = await (await fetch("/api/system/service",{method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({service,action})})).json();
+    toast(r.ok ? (service+" "+action+" ✓") : ("Failed: "+(r.error||"")), !r.ok);
+  }catch(e){ toast("Request sent (app may be restarting)…"); }
+}
+async function testGdrive(){ toast("Testing Google Drive…"); const r = await (await fetch("/api/test/gdrive",{method:"POST"})).json();
+  toast(r.ok?("Drive OK "+(r.links?.[0]||"")):("Drive: "+r.error), !r.ok); }
+async function testFtp(){ toast("Testing FTP…"); const r = await (await fetch("/api/test/ftp",{method:"POST"})).json();
+  toast(r.ok?"FTP OK ✓":("FTP: "+r.error), !r.ok); }
+async function loadGallery(){
+  const items = await (await fetch("/api/gallery")).json();
+  $("#gallery").innerHTML = items.map(it=>`
+    <div class="relative group">
+      <img src="${it.images[0]}" class="rounded-lg w-full h-28 object-cover">
+      <button class="btn btn-red btn-xs absolute top-1 right-1 opacity-0 group-hover:opacity-100"
+        onclick="delSession('${it.session}')">✕</button>
+    </div>`).join("") || "<p class='text-slate-400 text-sm'>No photos yet.</p>";
+}
+async function delSession(s){ if(!confirm("Delete "+s+"?"))return;
+  await fetch("/api/gallery/"+s,{method:"DELETE"}); loadGallery(); }
+async function loadFaceStatus(){
+  try{ const j = await (await fetch("/api/faces/status")).json();
+    $("#faceStatus").textContent = "Status: " + (j.available ? "🟢 ready" : "🔴 " + j.detail)
+      + ` · ${j.people} people / ${j.faces} faces indexed`;
+  }catch(e){}
+}
+async function loadPeople(){
+  const r = await fetch("/api/faces/groups");
+  if(r.status===401){ $("#gate").style.display="flex"; return; }
+  const groups = await r.json();
+  $("#people").innerHTML = groups.map(g=>
+    `<div class="text-center"><img src="${g.photos[0]}" class="rounded-lg w-full h-20 object-cover">
+     <div class="text-xs text-slate-500">#${g.person} · ${g.count}</div></div>`).join("")
+    || "<p class='text-slate-400 text-sm'>No people grouped yet.</p>";
+}
+
+/* ---- toast ---- */
+let toastT;
+function toast(msg, err){
+  let t = $("#toast"); if(!t){ t=document.createElement("div"); t.id="toast";
+    t.className="fixed bottom-5 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl text-white shadow-xl z-50 text-sm font-medium transition-opacity";
+    document.body.appendChild(t); }
+  t.textContent=msg; t.style.background = err?"#dc2626":"#0f766e"; t.style.opacity=1;
+  clearTimeout(toastT); toastT=setTimeout(()=>t.style.opacity=0, 3000);
+}
+
+/* ---- init ---- */
+async function init(){
+  SETTINGS = await (await fetch("/api/settings")).json();   // secrets masked
+  populate(); setupZoneDrag(); loadStatus(); loadGallery(); loadFaceStatus();
+  setInterval(loadStatus,5000);
+  let tab="status"; try{ tab=localStorage.getItem("booth_tab")||"status"; }catch(e){}
+  if(!TABS.some(t=>t[0]===tab)) tab="status";
+  showTab(tab);
+}
+buildTabs();
+showTab("status");
+(async()=>{ const c = await fetch("/api/auth/check"); if (c.ok){ $("#gate").style.display="none"; init(); } })();
+</script>
+</body>
+</html>

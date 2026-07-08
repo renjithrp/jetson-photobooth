@@ -1,0 +1,11 @@
+venv/
+data/
+data_test2/
+models/
+certs/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.onnx
+*.rknn
+CrSDK/

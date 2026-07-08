@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Photo Booth</title>
+<style>
+  :root { --accent:#5eead4; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; overflow:hidden; background:#000;
+    font-family:system-ui,Segoe UI,Roboto,sans-serif; color:#fff; cursor:none; }
+  #preview { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; }
+  .layer { position:fixed; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center; gap:24px;
+    transition:opacity .3s; }
+  .hidden { opacity:0; pointer-events:none; }
+  .big { font-size:18vw; font-weight:800; text-shadow:0 4px 30px #000a; }
+  .title { font-size:5vw; font-weight:800; text-shadow:0 3px 20px #000c; }
+  .sub { font-size:2.4vw; opacity:.9; text-shadow:0 2px 10px #000c; }
+  .scrim { background:radial-gradient(ellipse at center,#0006,#000a); }
+  /* light treatment so the live video stays clearly visible while waiting */
+  .scrim-bottom { background:linear-gradient(to top,#000c 0%,#0006 16%,#0000 42%);
+    justify-content:flex-end; padding-bottom:7vh; }
+  .flash { position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none; }
+  .flash.on { opacity:.9; transition:opacity .05s; }
+  .spinner { width:90px;height:90px;border:9px solid #fff3;border-top-color:var(--accent);
+    border-radius:50%; animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg);} }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.06)} }
+  #attract .title { animation:pulse 2.5s ease-in-out infinite; }
+  /* review: captured photo full-screen, QR pinned bottom-right */
+  .review-main { position:fixed; inset:0; width:100%; height:100%; object-fit:contain; background:#000; }
+  .thanks-banner { position:fixed; top:3vh; left:0; right:0; text-align:center;
+    font-size:3.2vw; font-weight:800; text-shadow:0 3px 16px #000d; }
+  .qr-corner { position:fixed; right:3vh; bottom:3vh; display:flex; align-items:center; gap:14px;
+    background:#0008; padding:14px 18px; border-radius:18px; box-shadow:0 8px 30px #0009; }
+  .qr { background:#fff; padding:10px; border-radius:12px; }
+  .qr img { width:170px; height:170px; display:block; }
+  .qr-cap { font-size:1.6vw; font-weight:700; line-height:1.2; text-shadow:0 2px 8px #000c; }
+  /* attract-screen guest onboarding: join Wi-Fi + find-your-photos QR pair */
+  .join-corner { position:absolute; right:3vh; bottom:3vh; display:flex; gap:2vh; }
+  .join-card { display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .join-card .qr img { width:14vh; height:14vh; }
+  .join-cap { font-size:1.3vw; font-weight:700; line-height:1.25; text-align:center;
+              text-shadow:0 2px 8px #000c; }
+  .join-cap span { font-weight:600; opacity:.85; font-size:1.1vw; }
+  #joincorner.hidden { display:none; }
+  #ipbadge { position:fixed; left:14px; bottom:12px; font-size:1.1vw; opacity:.7;
+    background:#0007; padding:6px 12px; border-radius:999px; }
+  #cambadge { position:fixed; right:14px; top:12px; font-size:1.2vw; font-weight:700;
+    background:#b91c1ccc; padding:8px 14px; border-radius:999px; display:none; }
+  .accent { color:var(--accent); }
+  #facezone { position:fixed; border:4px dashed rgba(45,212,191,.9);
+    border-radius:18px; box-shadow:0 0 0 9999px rgba(0,0,0,.28); pointer-events:none;
+    display:flex; align-items:flex-start; justify-content:center; z-index:5;
+    transition:opacity .3s; }
+  #facezone span { margin-top:-2.6rem; background:rgba(13,148,136,.92); color:#fff;
+    font-weight:700; padding:.3rem 1rem; border-radius:999px; font-size:1.4rem; }
+  #facezone.hidden { display:none; }
+</style>
+</head>
+<body>
+  <img id="preview" alt="">
+  <div id="facezone" class="hidden"><span>Stand here 🙂</span></div>
+  <div class="flash" id="flash"></div>
+
+  <div class="layer scrim-bottom" id="attract">
+    <div class="title">📸 <span id="boothName">AI Photo Booth</span></div>
+    <div class="sub" id="welcome">Show your hand ✋ to start!</div>
+    <div class="join-corner hidden" id="joincorner">
+      <div class="join-card">
+        <div class="qr"><img id="joinqr" alt="Join Wi-Fi QR"></div>
+        <div class="join-cap">Scan to join &amp; get your photos<br><span id="joinssid"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="layer scrim-bottom hidden" id="idle">
+    <div class="title" id="welcome2">Show your hand ✋ to start!</div>
+  </div>
+
+  <div class="layer hidden" id="countdown"><div class="big" id="count">3</div></div>
+
+  <div class="layer scrim-bottom hidden" id="capturing"><div class="title">Smile! 😄</div>
+    <div class="sub" id="shotinfo"></div></div>
+
+  <div class="layer scrim hidden" id="processing">
+    <div class="spinner"></div><div class="sub">Working some magic…</div></div>
+
+  <div class="layer hidden" id="review">
+    <img class="review-main" id="reviewMain" alt="">
+    <div class="qr-corner" id="qrwrap">
+      <div class="qr"><img id="qr" alt="QR"></div>
+      <div class="qr-cap">Scan to<br>download</div>
+    </div>
+  </div>
+
+  <div class="layer scrim hidden" id="error"><div class="title">😕 Oops</div>
+    <div class="sub" id="errmsg"></div></div>
+
+  <div id="ipbadge">admin: loading…</div>
+  <div id="cambadge">📷 Camera reconnecting…</div>
+
+<script>
+const L = id => document.getElementById(id);
+const layers = ["attract","idle","countdown","capturing","processing","review","error"];
+let attractTimer = null, attractAfter = 60;
+let previewUrl = "";
+
+// gesture -> emoji + friendly name, so the welcome reflects the configured trigger.
+// Put {gesture} (emoji) and/or {gesture_name} in the welcome message to auto-fill;
+// a bare "✋"/"hand" in the message is also swapped to match the selected gesture.
+const GEST = {
+  open_palm:["✋","your hand"], fist:["✊","a fist"], peace:["✌️","the peace sign"],
+  thumbs_up:["👍","a thumbs up"], three:["🤟","three fingers"], rock:["🤘","the rock sign"],
+  one:["☝️","one finger"], pinky:["🤙","your pinky"], call_me:["🤙","the call-me sign"],
+  love:["🤟","the love sign"], any_hand:["🖐","your hand"]
+};
+function gestureText(msg, gtype){
+  const g = GEST[gtype] || GEST.any_hand;
+  let out = (msg || "Show {gesture} to start!");
+  if(!/\{gesture/.test(out)) out = out.replace("✋", "{gesture}");   // legacy default
+  return out.replace(/\{gesture_name\}/g, g[1]).replace(/\{gesture\}/g, g[0]);
+}
+let faceZone = null;        // {x,y,w,h} normalised, or null when face gating is off
+let curState = "attract";
+let mirror = true;          // selfie-mirror the live preview so guests position naturally
+
+function renderFaceZone(){
+  const el = L("facezone");
+  const show = faceZone && (curState === "attract" || curState === "idle");
+  if(!show){ el.classList.add("hidden"); return; }
+  // The preview is object-fit:cover — map the normalised zone onto the covered area.
+  const img = L("preview");
+  const iw = img.naturalWidth || 4, ih = img.naturalHeight || 3;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const scale = Math.max(vw/iw, vh/ih);
+  const dw = iw*scale, dh = ih*scale, ox = (vw-dw)/2, oy = (vh-dh)/2;
+  // when the preview is mirrored, flip the zone's x so the guide lines up with what's shown
+  const zx = mirror ? (1 - faceZone.x - faceZone.w) : faceZone.x;
+  el.style.left = (ox + zx*dw) + "px";
+  el.style.top  = (oy + faceZone.y*dh) + "px";
+  el.style.width  = (faceZone.w*dw) + "px";
+  el.style.height = (faceZone.h*dh) + "px";
+  el.classList.remove("hidden");
+}
+window.addEventListener("resize", renderFaceZone);
+
+function setPreview(){
+  if(!previewUrl){ return; }
+  // cache-buster forces a fresh MJPEG connection (reconnects after a stream drop)
+  L("preview").src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+}
+
+function show(name){
+  curState = name;
+  layers.forEach(n => L(n).classList.toggle("hidden", n !== name));
+  renderFaceZone();
+}
+function scheduleAttract(){
+  clearTimeout(attractTimer);
+  attractTimer = setTimeout(()=>show("attract"), attractAfter*1000);
+}
+
+async function loadInfo(){
+  try{
+    const r = await fetch("/api/system/info"); const j = await r.json();
+    L("ipbadge").textContent = "admin: " + j.admin_url;
+    // show "camera reconnecting" whenever live view isn't actually streaming
+    // (camera_stream.streaming is more accurate than daemon_connected, which can be
+    // true while the daemon is up but producing no frames — the watchdog auto-heals it)
+    const cs = j.camera_stream;
+    const unhealthy = cs ? !cs.streaming : (j.daemon_connected === false);
+    L("cambadge").style.display = unhealthy ? "block" : "none";
+    const s = await (await fetch("/api/settings")).json();
+    attractAfter = s.timer.attract_after_seconds || 60;
+    mirror = s.preview.mirror !== false;
+    L("preview").style.transform = mirror ? "scaleX(-1)" : "none";
+    renderFaceZone();
+    L("boothName").textContent = s.general.booth_name;
+    const wel = gestureText(s.general.welcome_message, s.trigger && s.trigger.gesture_type);
+    L("welcome").textContent = wel;
+    L("welcome2").textContent = wel;
+    L("ipbadge").style.display = s.general.show_ip_overlay ? "block" : "none";
+    // preview comes through the backend; (re)connect if not already showing
+    previewUrl = (j.preview_enabled && j.preview_url) ? j.preview_url : "";
+    if (previewUrl && !L("preview").getAttribute("src")) setPreview();
+    faceZone = (j.require_face && j.face_zone) ? j.face_zone : null;
+    renderFaceZone();
+  }catch(e){ console.warn(e); }
+}
+
+async function loadWifi(){
+  // Single "join Wi-Fi" QR on the attract screen when the guest hotspot is up.
+  // On joining, the phone's captive-portal popup auto-opens the find-your-photos
+  // page (served over HTTP on :80 by backend/captive.py) — one scan does both.
+  try{
+    const w = await (await fetch("/api/wifi/info")).json();
+    if (w.active && w.join_qr){
+      L("joinqr").src = w.join_qr;
+      L("joinssid").textContent = w.ssid || "";
+      L("joincorner").classList.remove("hidden");
+    } else {
+      L("joincorner").classList.add("hidden");
+    }
+  }catch(e){ L("joincorner").classList.add("hidden"); }
+}
+
+function onEvent(ev){
+  switch(ev.type){
+    case "idle": show("idle"); scheduleAttract(); break;
+    case "countdown": clearTimeout(attractTimer); show("countdown"); L("count").textContent = ev.value; break;
+    case "capturing":
+      show("capturing"); L("shotinfo").textContent = ev.total>1 ? `Shot 1 of ${ev.total}`:"";
+      flash(); break;
+    case "shot":
+      L("shotinfo").textContent = ev.total>1 ? `Shot ${ev.index} of ${ev.total}`:""; flash(); break;
+    case "processing": show("processing"); break;
+    case "review":
+      show("review");
+      L("reviewMain").src = (ev.images && ev.images[0]) || "";
+      if (ev.qr){ L("qr").src = ev.qr; L("qrwrap").style.display="flex"; }
+      else { L("qrwrap").style.display="none"; }
+      break;
+    case "error": show("error"); L("errmsg").textContent = ev.message||""; break;
+  }
+}
+function flash(){ const f=L("flash"); f.classList.add("on"); setTimeout(()=>f.classList.remove("on"),120); }
+
+function connectWS(){
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws.onmessage = e => onEvent(JSON.parse(e.data));
+  // reconnect the preview whenever the backend comes back (the stream drops on restart)
+  ws.onopen = () => setTimeout(setPreview, 500);
+  ws.onclose = () => setTimeout(connectWS, 1500);
+}
+
+// if the MJPEG stream ever drops, reconnect it after a short delay
+L("preview").onerror = () => setTimeout(setPreview, 1500);
+
+loadInfo(); loadWifi(); connectWS(); scheduleAttract();
+setInterval(loadInfo, 30000);
+setInterval(loadWifi, 30000);
+</script>
+</body>
+</html>

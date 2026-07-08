@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Photo Booth — Camera</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+  html,body{margin:0;height:100%;background:#000;color:#fff;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+  #cam{position:fixed;inset:0;background:#000;overflow:hidden}
+  #preview{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+
+  /* top info bar */
+  #topbar{position:absolute;top:0;left:0;right:0;z-index:5;
+    padding:max(12px,env(safe-area-inset-top)) 16px 22px;
+    display:flex;align-items:center;gap:10px;
+    background:linear-gradient(180deg,rgba(0,0,0,.55),rgba(0,0,0,0))}
+  #title{font-weight:700;font-size:15px;opacity:.95}
+  #hint{margin-left:auto;font-size:13px;font-weight:600;color:#ffd54a;
+    background:rgba(0,0,0,.35);padding:5px 12px;border-radius:999px;min-height:26px;
+    display:flex;align-items:center;transition:.2s;opacity:0}
+  #hint.show{opacity:1}
+  .iconbtn{width:42px;height:42px;border-radius:50%;border:none;background:rgba(255,255,255,.14);
+    color:#fff;font-size:18px;display:none;align-items:center;justify-content:center;backdrop-filter:blur(6px)}
+  .iconbtn:active{background:rgba(255,255,255,.28)}
+
+  /* tap-to-focus ring */
+  #focusRing{position:absolute;width:78px;height:78px;border:2px solid #ffd54a;border-radius:10px;
+    transform:translate(-50%,-50%) scale(1.35);opacity:0;pointer-events:none;z-index:6;
+    box-shadow:0 0 0 1px rgba(0,0,0,.3) inset}
+  #focusRing.show{animation:focuspulse .6s ease-out}
+  @keyframes focuspulse{0%{opacity:1;transform:translate(-50%,-50%) scale(1.35)}
+    60%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(1)}}
+
+  /* capture flash */
+  #flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:7}
+  #flash.fire{animation:flash .35s ease-out}
+  @keyframes flash{0%{opacity:0}10%{opacity:.85}100%{opacity:0}}
+
+  /* control dock */
+  #dock{position:absolute;z-index:6;display:flex;align-items:center;justify-content:space-between;
+    left:0;right:0;bottom:0;padding:18px 28px max(20px,env(safe-area-inset-bottom));
+    background:linear-gradient(0deg,rgba(0,0,0,.6),rgba(0,0,0,0))}
+  .slot{width:56px;height:56px;display:flex;align-items:center;justify-content:center}
+
+  /* gallery thumbnail */
+  #galleryBtn{width:52px;height:52px;border-radius:13px;border:2px solid rgba(255,255,255,.7);
+    background:#222 center/cover no-repeat;overflow:hidden;font-size:20px;color:#fff;
+    display:flex;align-items:center;justify-content:center}
+  #galleryBtn:active{transform:scale(.94)}
+
+  /* shutter button (iconic camera ring) */
+  #shutter{width:76px;height:76px;border-radius:50%;border:none;background:transparent;position:relative;flex:0 0 auto}
+  #shutter::before{content:"";position:absolute;inset:0;border-radius:50%;border:4px solid #fff}
+  #shutter::after{content:"";position:absolute;inset:7px;border-radius:50%;background:#fff;transition:.12s}
+  #shutter:active::after{inset:11px;background:#dcdcdc}
+  #shutter:disabled::after{background:#888}
+  #shutter:disabled{opacity:.7}
+
+  /* horizontal layout: dock on the right as a vertical column (landscape-camera style).
+     Driven by body.lay-h (set from device orientation by default, overridable by the
+     in-app switch); body.lay-v forces the bottom dock. */
+  body.lay-h #dock{left:auto;top:0;bottom:0;right:0;width:120px;flex-direction:column-reverse;
+    padding:28px 0;background:linear-gradient(270deg,rgba(0,0,0,.6),rgba(0,0,0,0))}
+  body.lay-h #topbar{right:120px}
+
+  /* overlays: gallery + single photo */
+  .overlay{position:fixed;inset:0;z-index:20;background:#0a0c10;display:none;flex-direction:column}
+  .overlay.show{display:flex}
+  .ovhead{display:flex;align-items:center;gap:12px;padding:max(12px,env(safe-area-inset-top)) 16px 12px;
+    background:#11141b;border-bottom:1px solid #20242e;font-weight:700}
+  .ovhead button{border:none;background:transparent;color:#fff;font-size:16px;font-weight:700;padding:6px}
+  #galleryGrid{flex:1;overflow:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:6px;
+    grid-auto-rows:33vw}
+  @media (min-width:560px){#galleryGrid{grid-template-columns:repeat(5,1fr);grid-auto-rows:18vw}}
+  #galleryGrid img{width:100%;height:100%;object-fit:cover;border-radius:8px;background:#222}
+  #galleryGrid .empty{grid-column:1/-1;text-align:center;color:#67707f;padding:40px}
+
+  /* single-photo viewer */
+  #photoView{align-items:center;justify-content:center;background:rgba(0,0,0,.96);padding:16px}
+  #photoBig{max-width:100%;max-height:74vh;border-radius:12px;object-fit:contain}
+  #photoClose{position:absolute;top:max(14px,env(safe-area-inset-top));right:16px;width:42px;height:42px;
+    border-radius:50%;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:20px}
+  #photoMeta{display:flex;align-items:center;gap:16px;margin-top:16px}
+  #photoQr{background:#fff;padding:8px;border-radius:10px;display:none}
+  #photoQr img{width:120px;height:120px;display:block}
+  a.dl{background:#0f766e;color:#fff;text-decoration:none;padding:13px 20px;border-radius:12px;font-weight:700;font-size:15px}
+  a.dl:active{background:#0b5e57}
+</style>
+</head>
+<body>
+<div id="cam">
+  <img id="preview" alt="live preview">
+  <div id="focusRing"></div>
+  <div id="flash"></div>
+
+  <div id="topbar">
+    <div id="title">📸 Booth</div>
+    <div id="hint"></div>
+    <button class="iconbtn" id="fsBtn" title="Fullscreen" style="display:flex">⛶</button>
+    <button class="iconbtn" id="layoutBtn" title="Switch layout" style="display:flex">▭</button>
+    <button class="iconbtn" id="findIcon" title="Find my photos">🔍</button>
+  </div>
+
+  <div id="dock">
+    <div class="slot"><button id="galleryBtn" aria-label="Gallery">🖼</button></div>
+    <button id="shutter" aria-label="Capture"></button>
+    <div class="slot"></div>
+  </div>
+</div>
+
+<!-- gallery grid -->
+<div class="overlay" id="galleryView">
+  <div class="ovhead"><button id="galleryBack">‹ Back</button><span id="galleryTitle">Gallery</span></div>
+  <div id="galleryGrid"></div>
+</div>
+
+<!-- single photo viewer -->
+<div class="overlay" id="photoView">
+  <button id="photoClose">✕</button>
+  <img id="photoBig" alt="">
+  <div id="photoMeta">
+    <div id="photoQr"><img id="photoQrImg" alt="QR"></div>
+    <a class="dl" id="photoDl" href="#" target="_blank" download>⬇ Download</a>
+  </div>
+</div>
+
+<input type="file" accept="image/*" capture="user" id="selfie" style="display:none">
+
+<script>
+const L = id => document.getElementById(id);
+let previewUrl = "/api/preview/stream";
+let capturing = false;
+
+/* ---------- fullscreen ---------- */
+function fsActive(){ return document.fullscreenElement || document.webkitFullscreenElement; }
+async function toggleFullscreen(){
+  try{
+    if(!fsActive()){
+      const el = document.documentElement;
+      await (el.requestFullscreen ? el.requestFullscreen() : el.webkitRequestFullscreen());
+    } else {
+      await (document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen());
+    }
+  }catch(e){ hint("Fullscreen not supported — add to Home Screen"); }
+}
+function syncFsIcon(){ L("fsBtn").textContent = fsActive() ? "🗗" : "⛶"; }
+L("fsBtn").onclick = toggleFullscreen;
+document.addEventListener("fullscreenchange", syncFsIcon);
+document.addEventListener("webkitfullscreenchange", syncFsIcon);
+// iOS Safari has no Fullscreen API; hide the button when truly unavailable
+if(!document.documentElement.requestFullscreen && !document.documentElement.webkitRequestFullscreen)
+  L("fsBtn").style.display = "none";
+
+/* ---------- layout switch (vertical / horizontal) ---------- */
+const mqLandscape = matchMedia("(orientation:landscape)");
+let layout = localStorage.getItem("booth_layout") || "auto";   // auto | h | v
+function effLayout(){ return layout === "auto" ? (mqLandscape.matches ? "h" : "v") : layout; }
+function applyLayout(){
+  const eff = effLayout();
+  document.body.classList.toggle("lay-h", eff === "h");
+  document.body.classList.toggle("lay-v", eff !== "h");
+  // show the icon of the orientation you'll switch TO
+  L("layoutBtn").textContent = eff === "h" ? "▯" : "▭";
+  L("layoutBtn").title = eff === "h" ? "Switch to vertical" : "Switch to horizontal";
+}
+L("layoutBtn").onclick = () => {
+  layout = effLayout() === "h" ? "v" : "h";        // explicit after a manual switch
+  localStorage.setItem("booth_layout", layout);
+  applyLayout();
+};
+mqLandscape.addEventListener("change", () => { if(layout === "auto") applyLayout(); });
+applyLayout();
+
+/* ---------- live preview ---------- */
+function setPreview(){ L("preview").src = previewUrl + "?t=" + Date.now(); }
+L("preview").onerror = () => setTimeout(setPreview, 1500);
+
+let hintT;
+function hint(m, sticky){
+  const h = L("hint");
+  if(!m){ h.classList.remove("show"); return; }
+  h.textContent = m; h.classList.add("show");
+  clearTimeout(hintT);
+  if(!sticky) hintT = setTimeout(()=>h.classList.remove("show"), 2200);
+}
+
+/* ---------- tap-to-focus ---------- */
+let focusT = 0;
+L("cam").addEventListener("pointerdown", e => {
+  // ignore taps on the controls
+  if(e.target.closest("#dock") || e.target.closest("#topbar")) return;
+  const r = L("focusRing");
+  r.style.left = e.clientX + "px"; r.style.top = e.clientY + "px";
+  r.classList.remove("show"); void r.offsetWidth; r.classList.add("show");
+  const now = Date.now();
+  if(now - focusT < 700) return;            // debounce rapid taps
+  focusT = now;
+  doFocus();
+});
+async function doFocus(){
+  hint("Focusing…");
+  try{
+    const r = await (await fetch("/api/focus",{method:"POST"})).json();
+    hint(r.ok ? "Focus locked" : (r.reason || r.error || "Focus n/a"));
+  }catch(e){ hint("Focus error"); }
+}
+
+/* ---------- shutter ---------- */
+async function doCapture(){
+  if(capturing) return;
+  capturing = true; L("shutter").disabled = true;
+  L("flash").classList.remove("fire"); void L("flash").offsetWidth; L("flash").classList.add("fire");
+  hint("Capturing…", true);
+  try{
+    const r = await (await fetch("/api/capture",{method:"POST"})).json();
+    if(!r.ok){ hint(r.reason==="busy" ? "Booth is busy" : "Capture failed"); reEnable(); }
+  }catch(e){ hint("Capture error"); reEnable(); }
+}
+function reEnable(){ capturing = false; L("shutter").disabled = false; }
+L("shutter").onclick = doCapture;
+
+/* ---------- gallery ---------- */
+async function loadGallery(openView){
+  let items = [];
+  try{ items = await (await fetch("/api/gallery")).json(); }catch(e){}
+  if(items[0] && items[0].images && items[0].images[0]){
+    L("galleryBtn").textContent = "";
+    L("galleryBtn").style.backgroundImage = `url("${items[0].images[0]}")`;
+  }
+  if(openView){
+    L("galleryTitle").textContent = "Gallery";
+    const grid = L("galleryGrid");
+    const flat = items.flatMap(it => (it.images||[]).map(u => ({u, share:it.share_url})));
+    grid.innerHTML = flat.length
+      ? flat.map(p => `<img src="${p.u}" data-full="${p.u}" data-share="${p.share||''}">`).join("")
+      : `<div class="empty">No photos yet.<br>Tap the shutter to take one.</div>`;
+    showOverlay("galleryView");
+  }
+}
+L("galleryBtn").onclick = () => loadGallery(true);
+L("galleryBack").onclick = () => hideOverlay("galleryView");
+L("galleryGrid").addEventListener("click", e => {
+  const img = e.target.closest("img"); if(!img) return;
+  openPhoto(img.dataset.full, null, img.dataset.share || img.dataset.full);
+});
+
+/* ---------- single photo viewer ---------- */
+function openPhoto(src, qr, dl){
+  L("photoBig").src = src;
+  if(qr){ L("photoQrImg").src = qr; L("photoQr").style.display="block"; }
+  else { L("photoQr").style.display="none"; }
+  L("photoDl").href = dl || src;
+  showOverlay("photoView");
+}
+L("photoClose").onclick = () => hideOverlay("photoView");
+
+function showOverlay(id){ L(id).classList.add("show"); }
+function hideOverlay(id){ L(id).classList.remove("show"); }
+
+/* ---------- booth state over WS ---------- */
+function onEvent(ev){
+  switch(ev.type){
+    case "countdown": hint("Countdown " + ev.value, true); break;
+    case "capturing": hint("Say cheese! 😄", true); break;
+    case "processing": hint("Processing…", true); break;
+    case "review":
+      hint("Done ✓");
+      reEnable();
+      loadGallery(false);                       // refresh the thumbnail
+      openPhoto((ev.images && ev.images[0]) || "", ev.qr,
+                ev.share_url || (ev.images && ev.images[0]));
+      break;
+    case "idle": hint(""); reEnable(); break;
+  }
+}
+function connectWS(){
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws.onmessage = e => { try{ onEvent(JSON.parse(e.data)); }catch(_){} };
+  ws.onopen = () => setTimeout(setPreview, 400);
+  ws.onclose = () => setTimeout(connectWS, 1500);
+}
+
+/* ---------- find my photos (selfie match, if face grouping is on) ---------- */
+(async()=>{
+  try{ const j = await (await fetch("/api/faces/status")).json();
+    if(j.enabled && j.available) L("findIcon").style.display = "flex";
+  }catch(e){}
+})();
+L("findIcon").onclick = () => L("selfie").click();
+L("selfie").onchange = async () => {
+  const f = L("selfie").files[0]; if(!f) return;
+  hint("Finding your photos…", true);
+  const fd = new FormData(); fd.append("selfie", f);
+  try{
+    const r = await (await fetch("/api/faces/find",{method:"POST",body:fd})).json();
+    if(r.matched && r.photos && r.photos.length){
+      L("galleryTitle").textContent = `Found ${r.photos.length} photo(s) of you`;
+      L("galleryGrid").innerHTML = r.photos.map(u=>`<img src="${u}" data-full="${u}" data-share="${u}">`).join("");
+      showOverlay("galleryView"); hint("");
+    } else { hint(r.error || "No match — try a clearer selfie"); }
+  }catch(e){ hint("Find failed"); }
+  L("selfie").value = "";
+};
+
+/* ---------- selfie-mirror the live preview (not captured photos) ---------- */
+(async()=>{
+  try{
+    const s = await (await fetch("/api/settings")).json();
+    L("preview").style.transform = (s.preview && s.preview.mirror !== false) ? "scaleX(-1)" : "none";
+  }catch(e){}
+})();
+
+/* ---------- go ---------- */
+setPreview(); connectWS(); loadGallery(false);
+</script>
+</body>
+</html>

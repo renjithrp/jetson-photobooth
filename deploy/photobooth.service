@@ -1,0 +1,21 @@
+[Unit]
+Description=AI Photo Booth backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/photobooth
+Environment=BOOTH_DATA=/opt/photobooth/data
+Environment=BOOTH_PORT=8000
+# launcher auto-enables HTTPS when /opt/photobooth/certs/{cert,key}.pem exist
+ExecStart=/opt/photobooth/deploy/run-backend.sh
+Restart=always
+RestartSec=3
+# infinite MJPEG generators block graceful shutdown; force-stop quickly on restart
+TimeoutStopSec=5
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

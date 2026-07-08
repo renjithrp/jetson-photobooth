@@ -1,0 +1,171 @@
+"""Orchestrates a capture session and emits UI events along the way."""
+from __future__ import annotations
+
+import asyncio
+import subprocess
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Callable
+
+import qrcode
+
+from . import config, processing, uploaders
+from .camera import CaptureError, daemon_capture, make_camera
+from .events import bus
+
+
+class CaptureService:
+    def __init__(self, base_url_provider: Callable[[], str]) -> None:
+        self._busy = asyncio.Lock()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self.base_url = base_url_provider
+
+    def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        self._loop = loop
+
+    @property
+    def busy(self) -> bool:
+        return self._busy.locked()
+
+    # ---- entry points -----------------------------------------------------
+    def trigger_threadsafe(self, source: str = "manual") -> None:
+        """Callable from GPIO/gesture background threads."""
+        if self._loop is None:
+            return
+        self._loop.call_soon_threadsafe(lambda: asyncio.create_task(self.run_session(source)))
+
+    async def run_session(self, source: str = "manual") -> None:
+        if self._busy.locked():
+            return  # already running a session
+        async with self._busy:
+            try:
+                await self._session(source)
+            except CaptureError as e:
+                bus.publish({"type": "error", "message": str(e)})
+                await asyncio.sleep(4)
+                bus.publish({"type": "idle"})
+            except Exception as e:  # pragma: no cover
+                bus.publish({"type": "error", "message": f"unexpected: {e}"})
+                await asyncio.sleep(4)
+                bus.publish({"type": "idle"})
+
+    # ---- the session ------------------------------------------------------
+    async def _session(self, source: str) -> None:
+        s = config.load()
+        loop = asyncio.get_running_loop()
+
+        session_id = "session_" + datetime.now().strftime("%Y%m%d_%H%M%S")
+        sess_dir = config.captures_dir(s) / session_id
+        sess_dir.mkdir(parents=True, exist_ok=True)
+
+        # countdown
+        for n in range(s.timer.countdown_seconds, 0, -1):
+            bus.publish({"type": "countdown", "value": n, "source": source})
+            await asyncio.sleep(1)
+
+        # capture (blocking -> executor)
+        bus.publish({"type": "capturing", "total": s.timer.num_shots})
+
+        def on_shot(i: int) -> None:
+            bus.publish({"type": "shot", "index": i, "total": s.timer.num_shots})
+            if s.timer.num_shots > 1:
+                # brief inter-shot pause is handled by the camera; nudge the UI
+                pass
+
+        # Unified daemon: when the Sony camera is also the live-view source, capture
+        # via its /capture endpoint (one shared session — live view just pauses briefly).
+        if s.camera.backend == "sony" and s.preview.source == "sony_http":
+            shots = await loop.run_in_executor(
+                None, lambda: daemon_capture(s, sess_dir, s.timer.num_shots, on_shot))
+        else:
+            cam = make_camera(s)
+            shots = await loop.run_in_executor(
+                None, lambda: cam.capture(sess_dir, s.timer.num_shots, on_shot))
+
+        # processing
+        bus.publish({"type": "processing"})
+
+        def process() -> list[Path]:
+            outputs = list(shots)
+            if s.overlay.enabled and s.overlay.apply_to in ("each", "both"):
+                for p in shots:
+                    processing.apply_overlay(p, s)
+            if s.ai.enabled:
+                for p in shots:
+                    processing.apply_ai(p, s)
+            final_list = shots
+            if s.collage.enabled and len(shots) > 1:
+                collage = sess_dir / "collage.jpg"
+                processing.make_collage(shots, s, collage)
+                if s.overlay.enabled and s.overlay.apply_to in ("collage", "both"):
+                    processing.apply_overlay(collage, s)
+                final_list = [collage]
+            return final_list
+
+        finals = await loop.run_in_executor(None, process)
+
+        # face grouping (best-effort; never blocks or fails a capture)
+        if s.faces.enabled:
+            try:
+                from .faces import make_face_engine
+                from .face_index import index as face_index
+                eng = make_face_engine(s)
+                ok, detail = eng.available()
+                if not ok:
+                    print(f"[faces] engine unavailable: {detail}")
+                elif finals:
+                    primary = self._url(finals[0], s)
+                    embs = await loop.run_in_executor(
+                        None, lambda: [e for shot in shots for e in eng.embed_image(shot)])
+                    if embs:
+                        face_index.add_faces(session_id, primary, embs, s.faces.match_threshold)
+                        print(f"[faces] indexed {len(embs)} face(s) for {session_id}")
+            except Exception as e:
+                print(f"[faces] indexing failed: {e}")
+
+        # uploads (don't block the UI on failures)
+        upload_results = await loop.run_in_executor(None, lambda: uploaders.upload_all(finals, s))
+
+        # share URL + QR
+        base = (s.share.base_url or self.base_url()).rstrip("/")
+        share_url = f"{base}/s/{session_id}"
+        qr_rel = None
+        if s.share.qr_enabled:
+            img = qrcode.make(share_url)
+            qr_path = sess_dir / "qr.png"
+            img.save(qr_path)
+            qr_rel = self._url(qr_path, s)
+
+        bus.publish({
+            "type": "review",
+            "session": session_id,
+            "message": s.general.thanks_message,
+            "images": [self._url(p, s) for p in finals],
+            "all_shots": [self._url(p, s) for p in shots],
+            "share_url": share_url,
+            "qr": qr_rel,
+            "uploads": upload_results,
+            "review_seconds": s.timer.review_seconds,
+        })
+
+        self._prune(s)
+        await asyncio.sleep(s.timer.review_seconds)
+        bus.publish({"type": "idle"})
+
+    # ---- helpers ----------------------------------------------------------
+    def _url(self, path: Path, s) -> str:
+        root = config.captures_dir(s)
+        rel = path.relative_to(root)
+        return f"/captures/{rel.as_posix()}"
+
+    def _prune(self, s) -> None:
+        limit = s.storage.max_local_sessions
+        if not limit or limit <= 0:
+            return
+        root = config.captures_dir(s)
+        sessions = sorted([d for d in root.iterdir() if d.is_dir()],
+                          key=lambda d: d.stat().st_mtime)
+        import shutil
+        for d in sessions[:-limit]:
+            shutil.rmtree(d, ignore_errors=True)

@@ -1,0 +1,4 @@
+# Keep the Sony camera awake — disable USB autosuspend so the PC-Remote / live-view
+# session is never suspended (the booth is mains-powered). idVendor 054c = Sony.
+# Install to /etc/udev/rules.d/50-sony-noautosuspend.rules
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="054c", ATTR{power/control}="on"
