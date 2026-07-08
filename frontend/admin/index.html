@@ -306,6 +306,31 @@
         <label class="sw"><input type="checkbox" data-path="share.qr_enabled"><i></i></label></div>
       <div class="mt-2"><label class="fld">Public base URL (blank = auto)</label><input type="text" data-path="share.base_url"></div>
     </div>
+
+    <div class="card"><h2>🖨 Printing
+      <button class="btn btn-ghost btn-xs ml-auto" onclick="loadPrinters()">↻ Printers</button>
+      <button class="btn btn-ghost btn-xs" onclick="testPrint()">Test print</button></h2>
+      <p id="printStatus" class="sub">…</p>
+      <div class="toggle border-b border-slate-100"><div class="t-txt">Enable printing</div>
+        <label class="sw"><input type="checkbox" data-path="printing.enabled"><i></i></label></div>
+      <div class="grid2 mt-2">
+        <div><label class="fld">Printer</label><select data-path="printing.printer" id="printerSel"><option value="">System default</option></select></div>
+        <div><label class="fld">Copies</label><input type="number" data-path="printing.copies"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Media size (blank = default)</label><input type="text" data-path="printing.media" placeholder="e.g. 4x6, A6"></div>
+        <div><label class="fld">What to print</label><select data-path="printing.which">
+          <option value="final">Final (shared image)</option><option value="each">Each shot</option>
+          <option value="collage">Collage</option></select></div>
+      </div>
+      <div class="grid2 mt-1 items-center">
+        <div class="toggle"><div class="t-txt">Fit to page</div>
+          <label class="sw"><input type="checkbox" data-path="printing.fit_to_page"><i></i></label></div>
+        <div class="toggle"><div><div class="t-txt">Auto-print each session</div>
+          <div class="t-sub">The Arduino PRINT button reprints the last one</div></div>
+          <label class="sw"><input type="checkbox" data-path="printing.auto_print"><i></i></label></div>
+      </div>
+    </div>
   </section>
 
   <!-- ============ EFFECTS ============ -->
@@ -463,7 +488,7 @@ function showTab(name){
   try{ localStorage.setItem("booth_tab", name); }catch(e){}
   if(name==="trigger") startZonePreview();
   if(name==="network"){ loadNet(); }
-  if(name==="sharing"){ loadSync(); }
+  if(name==="sharing"){ loadSync(); loadPrinters(); }
   window.scrollTo({top:0,behavior:"instant"});
 }
 
@@ -696,6 +721,26 @@ async function loadSync(){
   $("#syncStatus").innerHTML = html;
 }
 async function retrySync(){ await fetch("/api/sync/retry",{method:"POST"}); toast("Retrying queued uploads…"); setTimeout(loadSync,1000); }
+
+/* ---- printing ---- */
+async function loadPrinters(){
+  const r = await fetch("/api/print/printers");
+  if(r.status===401){ $("#gate").style.display="flex"; return; }
+  const j = await r.json();
+  $("#printStatus").textContent = j.available
+    ? `🟢 ready · ${j.printers.length} printer(s)` + (j.queue.length?` · ${j.queue.length} in queue`:"")
+    : "🔴 " + j.detail;
+  const sel=$("#printerSel"); if(!sel) return;
+  const cur = getPath(SETTINGS,"printing.printer") || "";
+  sel.innerHTML = '<option value="">System default</option>' +
+    j.printers.map(p=>`<option value="${p.name}">${p.name}${p.default?" (default)":""} — ${p.state}</option>`).join("");
+  sel.value = cur;
+}
+async function testPrint(){
+  toast("Sending test print…");
+  const r = await (await fetch("/api/print",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})).json();
+  toast(r.ok?`Printing ${r.count||1} ✓`:("Print: "+(r.error||"failed")), !r.ok);
+}
 
 /* ---- toast ---- */
 let toastT;

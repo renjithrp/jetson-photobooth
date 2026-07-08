@@ -136,6 +136,18 @@ class AISettings(BaseModel):
     rknn_model: str = ""                  # path to a .rknn segmentation model on the Pi
 
 
+class PrintSettings(BaseModel):
+    """Photo printing via CUPS. Works with dye-sub photo printers (DNP/Selphy/Mitsubishi)
+    or any USB/network printer. The Arduino PRINT button prints the last session."""
+    enabled: bool = False
+    printer: str = ""                     # "" = system default (CUPS)
+    copies: int = 1
+    media: str = ""                       # e.g. "4x6", "A6", "" = printer default
+    fit_to_page: bool = True
+    auto_print: bool = False              # print automatically after every session
+    which: Literal["final", "each", "collage"] = "final"   # what to print
+
+
 class NetworkSettings(BaseModel):
     """Guest hotspot (AP) config. Runs on a SEPARATE radio (the USB dongle) so the booth
     stays online on the M.2 while serving guests offline. The management radio is never
@@ -179,3 +191,4 @@ class Settings(BaseModel):
     share: ShareSettings = ShareSettings()
     faces: FacesSettings = FacesSettings()
     network: NetworkSettings = NetworkSettings()
+    printing: PrintSettings = PrintSettings()

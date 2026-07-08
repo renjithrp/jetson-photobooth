@@ -23,7 +23,7 @@ from fastapi import (Depends, FastAPI, File, HTTPException, Request, Response,
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, config, face_index, faces, gestures, liveview, uploaders, wifi
+from . import auth, config, face_index, faces, gestures, liveview, printing, uploaders, wifi
 from .sync import worker as sync_worker
 from .auth import require_auth
 from .faces import make_face_engine
@@ -99,7 +99,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PhotoBooth Pro", version="1.0.0", lifespan=lifespan)
 app.mount("/assets", StaticFiles(directory=str(FRONTEND / "assets")), name="assets")
 service = CaptureService(base_url)
-triggers = TriggerManager(on_trigger=service.trigger_threadsafe)
+triggers = TriggerManager(on_trigger=service.trigger_threadsafe,
+                          on_print=service.print_last_threadsafe)
 watchdog = CameraWatchdog(hub, config, lambda: service.busy)
 
 
@@ -443,6 +444,36 @@ async def sync_status() -> dict:
 async def sync_retry(_: None = Depends(require_auth)) -> dict:
     sync_worker.retry_now()
     return {"ok": True}
+
+
+# ---- printing -------------------------------------------------------------
+@app.get("/api/print/printers")
+async def print_printers(_: None = Depends(require_auth)) -> dict:
+    ok, detail = printing.available()
+    return {"available": ok, "detail": detail, "printers": printing.printers(),
+            "queue": printing.queue()}
+
+
+@app.post("/api/print")
+async def print_now(body: dict, _: None = Depends(require_auth)) -> dict:
+    """Print the last session, or a specific session folder. Used for the admin Test
+    print and a manual reprint."""
+    s = config.load()
+    session = body.get("session")
+    if session:
+        safe = str(session).replace("/", "").replace("..", "")
+        d = config.captures_dir() / safe
+        files = sorted(str(p) for p in d.iterdir()
+                       if p.suffix.lower() in (".jpg", ".jpeg", ".png") and p.name != "qr.png") \
+            if d.is_dir() else []
+    else:
+        files = service.last_finals
+    if not files:
+        return {"ok": False, "error": "nothing to print yet"}
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: printing.print_files(
+        files, s.printing.printer, int(body.get("copies") or s.printing.copies),
+        s.printing.media, s.printing.fit_to_page))
 
 
 # ---- network / Wi-Fi / hotspot --------------------------------------------

@@ -20,6 +20,8 @@ class CaptureService:
         self._busy = asyncio.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
         self.base_url = base_url_provider
+        self.last_finals: list = []      # most recent session outputs (for reprint)
+        self.last_shots: list = []
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -104,6 +106,16 @@ class CaptureService:
             return final_list
 
         finals = await loop.run_in_executor(None, process)
+        self.last_finals = list(finals)
+        self.last_shots = list(shots)
+
+        # auto-print (best-effort; never blocks or fails a capture)
+        if s.printing.enabled and s.printing.auto_print:
+            from . import printing
+            targets = self._print_targets(finals, shots, s)
+            await loop.run_in_executor(None, lambda: printing.print_files(
+                targets, s.printing.printer, s.printing.copies, s.printing.media,
+                s.printing.fit_to_page))
 
         # face grouping (best-effort; never blocks or fails a capture)
         if s.faces.enabled:
@@ -160,6 +172,31 @@ class CaptureService:
         self._prune(s)
         await asyncio.sleep(s.timer.review_seconds)
         bus.publish({"type": "idle"})
+
+    # ---- printing ---------------------------------------------------------
+    def _print_targets(self, finals, shots, s) -> list:
+        """Which images to print: the shared output (final), each raw shot, or the collage."""
+        if s.printing.which == "each":
+            return list(shots)
+        return list(finals)   # "final"/"collage": finals is already the collage when enabled
+
+    def print_last_threadsafe(self, source: str = "arduino") -> None:
+        """Reprint the last session — called from the Arduino PRINT button thread."""
+        if self._loop is None:
+            return
+        self._loop.call_soon_threadsafe(lambda: asyncio.create_task(self._print_last()))
+
+    async def _print_last(self) -> None:
+        s = config.load()
+        if not s.printing.enabled or not self.last_finals:
+            return
+        from . import printing
+        loop = asyncio.get_running_loop()
+        targets = self._print_targets(self.last_finals, self.last_shots, s)
+        res = await loop.run_in_executor(None, lambda: printing.print_files(
+            targets, s.printing.printer, s.printing.copies, s.printing.media, s.printing.fit_to_page))
+        if not res.get("ok"):
+            print(f"[print] reprint failed: {res.get('error')}")
 
     # ---- helpers ----------------------------------------------------------
     def _url(self, path: Path, s) -> str:
