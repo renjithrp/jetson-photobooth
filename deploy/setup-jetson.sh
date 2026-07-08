@@ -40,6 +40,18 @@ fi
 ./venv/bin/pip install -q --upgrade pip
 ./venv/bin/pip install -q -r requirements.txt
 
+say "AI stack (face recognition + background segmentation)"
+./venv/bin/pip install -q opencv-python-headless insightface onnx rembg || echo "  (AI extras optional)"
+# GPU onnxruntime built for sm_87 (Orin) — use the prebuilt local wheel if present,
+# else fall back to CPU onnxruntime. Build the wheel with jetson-jp7-onnxruntime (SPEC §7).
+GPUWHL="$(ls "$APP"/wheels/onnxruntime_gpu-*.whl 2>/dev/null | head -1)"
+if [ -n "$GPUWHL" ]; then
+  ./venv/bin/pip uninstall -y onnxruntime onnxruntime-gpu >/dev/null 2>&1 || true
+  ./venv/bin/pip install -q "$GPUWHL" && echo "  onnxruntime-gpu (sm_87) installed — GPU AI enabled"
+else
+  ./venv/bin/pip install -q onnxruntime && echo "  onnxruntime CPU installed (no GPU wheel in wheels/)"
+fi
+
 say "data dirs"
 mkdir -p "$APP/data/captures" "$APP/data/incoming" "$APP/models"
 
