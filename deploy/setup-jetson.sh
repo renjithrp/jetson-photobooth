@@ -66,15 +66,8 @@ install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "/home/$KIOSK_USER/.config/autostar
 sudo cp "$APP/deploy/photobooth-kiosk.desktop" "/home/$KIOSK_USER/.config/autostart/"
 sudo chown "$KIOSK_USER:$KIOSK_USER" "/home/$KIOSK_USER/.config/autostart/photobooth-kiosk.desktop"
 
-say "GDM autologin for $KIOSK_USER (booth boots straight into the kiosk)"
-if [ -f /etc/gdm3/custom.conf ]; then
-  sudo sed -i \
-    -e "s/^#\?\s*AutomaticLoginEnable\s*=.*/AutomaticLoginEnable=true/" \
-    -e "s/^#\?\s*AutomaticLogin\s*=.*/AutomaticLogin=$KIOSK_USER/" \
-    /etc/gdm3/custom.conf
-  grep -q "AutomaticLoginEnable=true" /etc/gdm3/custom.conf || \
-    sudo sed -i "/^\[daemon\]/a AutomaticLoginEnable=true\nAutomaticLogin=$KIOSK_USER" /etc/gdm3/custom.conf
-fi
+say "auto-login (no password) + never blank/lock/screensaver/suspend"
+bash "$APP/deploy/setup-kiosk-power.sh" "$KIOSK_USER"
 
 IP="$(hostname -I | awk '{print $1}')"
 say "done"
