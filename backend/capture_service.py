@@ -124,8 +124,16 @@ class CaptureService:
             except Exception as e:
                 print(f"[faces] indexing failed: {e}")
 
-        # uploads (don't block the UI on failures)
-        upload_results = await loop.run_in_executor(None, lambda: uploaders.upload_all(finals, s))
+        # uploads: enqueue to the background sync worker (offline-safe, retrying) so a slow
+        # or missing network never blocks the review screen. Legacy inline upload when off.
+        if s.storage.background_sync:
+            from .sync import worker as sync_worker
+            sync_worker.enqueue(session_id, finals, s)
+            queued = [d for d, on in (("gdrive", s.storage.gdrive.enabled),
+                                      ("ftp", s.storage.ftp.enabled)) if on]
+            upload_results = {"queued": queued} if queued else {}
+        else:
+            upload_results = await loop.run_in_executor(None, lambda: uploaders.upload_all(finals, s))
 
         # share URL + QR
         base = (s.share.base_url or self.base_url()).rstrip("/")

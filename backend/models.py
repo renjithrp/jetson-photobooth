@@ -106,6 +106,9 @@ class StorageSettings(BaseModel):
     local_dir: str = "captures"           # relative to data dir, or absolute
     keep_local: bool = True
     max_local_sessions: int = 0           # 0 = unlimited, else prune oldest
+    # Background sync: queue uploads to a durable worker (retry/backoff, survives reboot &
+    # offline) instead of blocking the capture. Turn off for legacy inline uploads.
+    background_sync: bool = True
     gdrive: GDriveDestination = GDriveDestination()
     ftp: FTPDestination = FTPDestination()
 
@@ -133,6 +136,17 @@ class AISettings(BaseModel):
     rknn_model: str = ""                  # path to a .rknn segmentation model on the Pi
 
 
+class NetworkSettings(BaseModel):
+    """Guest hotspot (AP) config. Runs on a SEPARATE radio (the USB dongle) so the booth
+    stays online on the M.2 while serving guests offline. The management radio is never
+    used for the AP."""
+    hotspot_enabled: bool = False
+    hotspot_ssid: str = "PhotoBooth"
+    hotspot_password: str = "booth1234"   # WPA2, >=8 chars — secret, masked by the API
+    hotspot_band: Literal["bg", "a"] = "bg"   # bg = 2.4GHz (compatible), a = 5GHz
+    hotspot_hidden: bool = False
+
+
 class ShareSettings(BaseModel):
     qr_enabled: bool = True
     base_url: str = ""                    # override public URL; blank = auto-detect
@@ -141,6 +155,7 @@ class ShareSettings(BaseModel):
 class FacesSettings(BaseModel):
     """Group photos by the person's face. On the Jetson: InsightFace (SCRFD detector +
     ArcFace r50 embedding) on the GPU via onnxruntime (CUDA/TensorRT EP), CPU fallback."""
+    model_config = {"protected_namespaces": ()}   # allow the model_pack field name
     enabled: bool = False
     engine: Literal["insightface", "off"] = "insightface"
     model_pack: str = "buffalo_l"         # InsightFace pack: SCRFD-10G det + ArcFace r50
@@ -163,3 +178,4 @@ class Settings(BaseModel):
     ai: AISettings = AISettings()
     share: ShareSettings = ShareSettings()
     faces: FacesSettings = FacesSettings()
+    network: NetworkSettings = NetworkSettings()

@@ -23,7 +23,8 @@ from fastapi import (Depends, FastAPI, File, HTTPException, Request, Response,
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, config, face_index, faces, gestures, liveview, uploaders
+from . import auth, config, face_index, faces, gestures, liveview, uploaders, wifi
+from .sync import worker as sync_worker
 from .auth import require_auth
 from .faces import make_face_engine
 from .camera import make_camera
@@ -71,36 +72,6 @@ def _qr_data_uri(text: str) -> str:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-# NetworkManager connection name created by deploy/setup-hotspot.sh.
-HOTSPOT_CON = "photobooth-ap"
-
-
-def _hotspot_info() -> dict:
-    """Read the live guest hotspot (SSID/password/state) from NetworkManager.
-
-    The AP itself is the single source of truth — we don't duplicate the SSID/password
-    in settings. Returns active=False when the hotspot isn't up (or nmcli is absent).
-    """
-    def _nmcli(*args: str) -> str:
-        return subprocess.run(["nmcli", *args], capture_output=True, text=True,
-                              timeout=5).stdout.strip()
-    try:
-        state = _nmcli("-t", "-f", "GENERAL.STATE", "connection", "show", HOTSPOT_CON)
-        active = "activated" in state
-        out = _nmcli("-s", "-t", "-f",
-                     "802-11-wireless.ssid,802-11-wireless-security.psk,802-11-wireless.hidden",
-                     "connection", "show", HOTSPOT_CON)
-        fields = dict(line.split(":", 1) for line in out.splitlines() if ":" in line)
-        ssid = fields.get("802-11-wireless.ssid", "")
-        psk = fields.get("802-11-wireless-security.psk", "")
-        hidden = fields.get("802-11-wireless.hidden", "no") == "yes"
-    except Exception:
-        return {"active": False}
-    if not ssid:
-        return {"active": False}
-    return {"active": active, "ssid": ssid, "password": psk, "hidden": hidden}
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
@@ -114,6 +85,7 @@ async def lifespan(app: FastAPI):
         hub.start()
     triggers.start(s, skip_gesture=sony)               # hub handles gesture for Sony
     watchdog.start()                                   # self-heals a wedged camera daemon
+    sync_worker.start()                                # background uploads (offline-safe queue)
     if s.faces.enabled:                                # load the face model off the boot path
         threading.Thread(target=faces.warmup, args=(s,), daemon=True).start()
     log.info("ready at %s (admin: %s/admin)", base_url(), base_url())
@@ -121,6 +93,7 @@ async def lifespan(app: FastAPI):
     watchdog.stop()
     triggers.stop()
     hub.stop()
+    sync_worker.stop()
 
 
 app = FastAPI(title="AI Photo Booth", version="0.1.0", lifespan=lifespan)
@@ -161,7 +134,7 @@ async def wifi_info() -> dict:
     `join_qr` is a standard Wi-Fi QR (most phones offer one-tap join on scan);
     `find_qr`/`find_url` point at the guest find-your-photos page.
     """
-    hp = _hotspot_info()
+    hp = wifi.hotspot_status()
     find_url = f"{guest_base_url()}/booth"
     out = {**hp, "find_url": find_url, "find_qr": _qr_data_uri(find_url)}
     if hp.get("active") and hp.get("ssid"):
@@ -188,6 +161,10 @@ def _mask_secrets(data: dict) -> dict:
         pass
     try:
         d["storage"]["ftp"]["password"] = ""
+    except Exception:
+        pass
+    try:
+        d["network"]["hotspot_password"] = ""
     except Exception:
         pass
     return d
@@ -292,6 +269,7 @@ async def put_settings(partial: dict, _: None = Depends(require_auth)) -> dict:
     # blank secrets mean "keep current" (the UI never receives the real values)
     _strip_blank_secret(partial, ["general", "admin_pin"])
     _strip_blank_secret(partial, ["storage", "ftp", "password"])
+    _strip_blank_secret(partial, ["network", "hotspot_password"])
     old = config.load()
     try:
         s = config.update(partial)
@@ -452,6 +430,71 @@ async def test_ftp(_: None = Depends(require_auth)) -> dict:
     res = uploaders.ftp_upload([tmp], s.storage.ftp)
     tmp.unlink(missing_ok=True)
     return res
+
+
+# ---- background sync ------------------------------------------------------
+@app.get("/api/sync/status")
+async def sync_status() -> dict:
+    return sync_worker.status()
+
+
+@app.post("/api/sync/retry")
+async def sync_retry(_: None = Depends(require_auth)) -> dict:
+    sync_worker.retry_now()
+    return {"ok": True}
+
+
+# ---- network / Wi-Fi / hotspot --------------------------------------------
+@app.get("/api/network/status")
+async def network_status() -> dict:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, wifi.status)
+
+
+@app.get("/api/wifi/scan")
+async def wifi_scan(_: None = Depends(require_auth)) -> list[dict]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, wifi.scan)
+
+
+@app.post("/api/wifi/connect")
+async def wifi_connect(body: dict, _: None = Depends(require_auth)) -> dict:
+    ssid = str(body.get("ssid", "")).strip()
+    if not ssid:
+        raise HTTPException(400, "ssid required")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, lambda: wifi.connect(ssid, str(body.get("password", ""))))
+
+
+@app.post("/api/wifi/forget")
+async def wifi_forget(body: dict, _: None = Depends(require_auth)) -> dict:
+    ssid = str(body.get("ssid", "")).strip()
+    if not ssid:
+        raise HTTPException(400, "ssid required")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: wifi.forget(ssid))
+
+
+@app.post("/api/hotspot")
+async def hotspot_control(body: dict, _: None = Depends(require_auth)) -> dict:
+    """Bring the guest hotspot up/down. Uses the saved network settings (SSID/password/
+    band) and always runs on the spare radio — never the management interface."""
+    action = body.get("action")
+    s = config.load()
+    loop = asyncio.get_running_loop()
+    if action == "up":
+        n = s.network
+        res = await loop.run_in_executor(None, lambda: wifi.hotspot_up(
+            n.hotspot_ssid, n.hotspot_password, band=n.hotspot_band, hidden=n.hotspot_hidden))
+        if res.get("ok"):
+            config.update({"network": {"hotspot_enabled": True}})
+        return res
+    if action == "down":
+        res = await loop.run_in_executor(None, wifi.hotspot_down)
+        config.update({"network": {"hotspot_enabled": False}})
+        return res
+    raise HTTPException(400, "action must be 'up' or 'down'")
 
 
 # ---- websocket (events) ---------------------------------------------------
