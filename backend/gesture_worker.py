@@ -90,8 +90,11 @@ class GestureWorker:
         self.base = _detect_backend()
         self.trigger = _load_trigger() or SimpleNamespace()
         self._settings_read = 0.0
+        # Lower detection/tracking confidence so a small, far-away hand in the
+        # low-res (1024x680) live view still gets found (was 0.8/0.6). The hold
+        # time + gesture-match + cooldown filter out the extra weak detections.
         self._hands = mp.solutions.hands.Hands(
-            max_num_hands=1, min_detection_confidence=0.8, min_tracking_confidence=0.6)
+            max_num_hands=1, min_detection_confidence=0.5, min_tracking_confidence=0.5)
         self._face = None  # lazily created when require_face is on
         self._hold_start: float | None = None
         self._last_detected = 0.0
@@ -186,7 +189,7 @@ class GestureWorker:
                 except Exception:
                     score = 0.0
             gtype = getattr(t, "gesture_type", "open_palm")
-            gesture_ok = bool(hands_lm) and score >= 0.7 and \
+            gesture_ok = bool(hands_lm) and score >= 0.5 and \
                 gestures.gesture_matches(gtype, hands_lm[0].landmark)
             detected = gesture_ok
 

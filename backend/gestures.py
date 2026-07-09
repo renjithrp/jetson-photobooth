@@ -33,7 +33,10 @@ def gesture_matches(gtype: str, lm) -> bool:
     thumb_out = (_dist(lm[4], lm[5]) / hand) > 0.7
 
     if gtype == "open_palm":
-        return count == 4
+        # Tolerate one finger not registering: at booth distance the low-res live
+        # view makes the pinky/ring landmarks noisy, so a real open hand often reads
+        # as 3/4 fingers up. Require >=3 rather than a perfect 4 (was count == 4).
+        return count >= 3
     if gtype == "fist":
         return count == 0 and not thumb_up
     if gtype == "peace":          # V sign ✌
