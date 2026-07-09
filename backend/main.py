@@ -79,6 +79,16 @@ async def lifespan(app: FastAPI):
     service.bind_loop(loop)
     app.mount("/captures", StaticFiles(directory=str(config.captures_dir())), name="captures")
     s = config.load()
+    # Load numpy + OpenCV once here, in the main thread, BEFORE any worker thread
+    # spawns. numpy 2.x raises "cannot load module more than once per process" if its
+    # C extension is first imported concurrently from two threads (the faces warmup
+    # thread vs. a capture's executor thread), which intermittently broke face grouping
+    # until a restart. Eager main-thread import makes every later import a cached no-op.
+    try:
+        import numpy  # noqa: F401
+        import cv2     # noqa: F401
+    except Exception as e:
+        log.warning("eager numpy/cv2 preload skipped: %s", e)
     sony = s.preview.source == "sony_http"
     if sony:
         hub.configure(s, service.trigger_threadsafe)   # single camera consumer + gesture
