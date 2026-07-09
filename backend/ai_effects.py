@@ -47,7 +47,9 @@ def _session(model_name: str, use_gpu: bool):
     if hit is not None:
         return hit
     from rembg import new_session
-    providers = (["CUDAExecutionProvider", "TensorrtExecutionProvider", "CPUExecutionProvider"]
+    # CUDA EP does all the work here; the TensorRT EP was only ever second (so it never
+    # got any nodes) yet still cost init time + GPU memory on boot — dropped.
+    providers = (["CUDAExecutionProvider", "CPUExecutionProvider"]
                  if use_gpu else ["CPUExecutionProvider"])
     sess = new_session(model_name, providers=providers)
     _SESS_CACHE[key] = sess

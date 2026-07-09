@@ -17,6 +17,17 @@ if [ -z "${DISPLAY:-}" ] || ! xset -q >/dev/null 2>&1; then
   done
 fi
 
+# Render at 1080p, not the panel's native 4K. The Chromium snap has no GPU access on
+# this Jetson (strict confinement can't reach the Tegra EGL driver), so it composites
+# the live view in SOFTWARE: 4K@30 burns ~2.5 CPU cores, 1080p@60 ~1.7 and is smoother.
+# The Sony live-view source is only ~1024px, so no real detail is lost. Override with
+# KIOSK_RES / KIOSK_RATE (e.g. KIOSK_RES=4096x2160 to restore native 4K).
+KRES="${KIOSK_RES:-1920x1080}"; KRATE="${KIOSK_RATE:-60}"
+KOUT="$(xrandr 2>/dev/null | awk '/ connected/{print $1; exit}')"
+if [ -n "$KOUT" ] && [ "$KRES" != "native" ]; then
+  xrandr --output "$KOUT" --mode "$KRES" --rate "$KRATE" 2>/dev/null || true
+fi
+
 # Wait for the backend to answer before opening the browser.
 until curl -skf "$URL" >/dev/null || curl -sf "http://localhost:$PORT/" >/dev/null; do sleep 1; done
 

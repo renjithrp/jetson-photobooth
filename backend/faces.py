@@ -31,7 +31,8 @@ def _get_app(model_pack: str, det_size: int, use_gpu: bool):
     from insightface.app import FaceAnalysis
 
     if use_gpu:
-        providers = ["CUDAExecutionProvider", "TensorrtExecutionProvider", "CPUExecutionProvider"]
+        # CUDA EP handles all nodes; TRT was only second (unused) but cost init + memory.
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
         ctx_id = 0
     else:
         providers = ["CPUExecutionProvider"]
