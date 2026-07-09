@@ -49,11 +49,7 @@ class SyncWorker:
     # ---- API --------------------------------------------------------------
     def enqueue(self, session: str, files: list, settings) -> None:
         """Queue a finished session's files for whichever destinations are enabled."""
-        dests = []
-        if settings.storage.gdrive.enabled:
-            dests.append("gdrive")
-        if settings.storage.ftp.enabled:
-            dests.append("ftp")
+        dests = uploaders.enabled_dests(settings)
         if not dests:
             return
         with self._lock:
@@ -137,14 +133,11 @@ class SyncWorker:
                     j["done"].append(dest)
                     changed = True
                     continue
-                if dest == "gdrive" and s.storage.gdrive.enabled:
-                    res = uploaders.gdrive_upload(files, s.storage.gdrive)
-                elif dest == "ftp" and s.storage.ftp.enabled:
-                    res = uploaders.ftp_upload(files, s.storage.ftp)
-                else:                               # destination turned off since queueing
+                if dest not in uploaders.enabled_dests(s):   # turned off since queueing
                     j["done"].append(dest)
                     changed = True
                     continue
+                res = uploaders.dispatch(dest, files, s)
                 if res.get("ok"):
                     j["done"].append(dest)
                     j["last_error"] = ""

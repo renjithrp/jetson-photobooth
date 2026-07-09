@@ -13,6 +13,10 @@ import shutil
 import socket
 import subprocess
 import threading
+import datetime
+import secrets
+import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -181,6 +185,15 @@ def _mask_secrets(data: dict) -> dict:
         d["storage"]["ftp"]["password"] = ""
     except Exception:
         pass
+    for path in (["storage", "gdrive", "client_secret"], ["storage", "gdrive", "token"],
+                 ["storage", "s3", "secret_access_key"]):
+        try:
+            node = d
+            for k in path[:-1]:
+                node = node[k]
+            node[path[-1]] = ""
+        except Exception:
+            pass
     try:
         d["network"]["hotspot_password"] = ""
     except Exception:
@@ -266,6 +279,7 @@ async def system_info() -> dict:
         "face_zone": dict(zip(("x", "y", "w", "h"), gestures.region_box(s.trigger))),
         "preview_url": "/api/preview/stream",
         "preview_enabled": s.preview.enabled,
+        "gdrive_connected": bool(s.storage.gdrive.token),
         "daemon_connected": daemon,
         "camera_stream": hub.health() if s.preview.source == "sony_http" else None,
         "watchdog_restarts": watchdog.restarts,
@@ -287,6 +301,9 @@ async def put_settings(partial: dict, _: None = Depends(require_auth)) -> dict:
     # blank secrets mean "keep current" (the UI never receives the real values)
     _strip_blank_secret(partial, ["general", "admin_pin"])
     _strip_blank_secret(partial, ["storage", "ftp", "password"])
+    _strip_blank_secret(partial, ["storage", "gdrive", "client_secret"])
+    _strip_blank_secret(partial, ["storage", "gdrive", "token"])
+    _strip_blank_secret(partial, ["storage", "s3", "secret_access_key"])
     _strip_blank_secret(partial, ["network", "hotspot_password"])
     old = config.load()
     try:
@@ -448,6 +465,84 @@ async def test_ftp(_: None = Depends(require_auth)) -> dict:
     res = uploaders.ftp_upload([tmp], s.storage.ftp)
     tmp.unlink(missing_ok=True)
     return res
+
+
+@app.post("/api/test/s3")
+async def test_s3(_: None = Depends(require_auth)) -> dict:
+    s = config.load()
+    tmp = config.data_dir() / "_s3_test.txt"
+    tmp.write_text("photobooth s3 test")
+    res = uploaders.s3_upload([tmp], s.storage.s3)
+    tmp.unlink(missing_ok=True)
+    return res
+
+
+# ---- Google Drive OAuth (configured entirely from the admin panel) --------
+_GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
+_GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+_gdrive_states: dict[str, dict] = {}   # state -> {redirect_uri, ts}
+
+
+def _gdrive_result_page(ok: bool, msg: str) -> str:
+    color = "#16a34a" if ok else "#dc2626"
+    icon = "✅" if ok else "⚠️"
+    return (f"<!doctype html><meta charset=utf-8><title>Google Drive</title>"
+            f"<body style='font-family:system-ui;background:#0f172a;color:#e2e8f0;"
+            f"display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>"
+            f"<div style='text-align:center;max-width:32rem;padding:2rem'>"
+            f"<div style='font-size:3rem'>{icon}</div>"
+            f"<h2 style='color:{color}'>{'Google Drive connected' if ok else 'Connection failed'}</h2>"
+            f"<p style='opacity:.8'>{msg}</p>"
+            f"<p style='opacity:.6'>You can close this tab and return to the admin panel.</p>"
+            f"</div></body>")
+
+
+@app.get("/api/gdrive/authorize")
+async def gdrive_authorize(request: Request, _: None = Depends(require_auth)) -> dict:
+    g = config.load().storage.gdrive
+    if not (g.client_id and g.client_secret):
+        raise HTTPException(400, "Enter the Google OAuth Client ID and Secret, then Save, before connecting.")
+    redirect_uri = str(request.base_url).rstrip("/") + "/api/gdrive/oauth/callback"
+    # prune states older than 10 min
+    cutoff = time.time() - 600
+    for k in [k for k, v in _gdrive_states.items() if v["ts"] < cutoff]:
+        _gdrive_states.pop(k, None)
+    state = secrets.token_urlsafe(24)
+    _gdrive_states[state] = {"redirect_uri": redirect_uri, "ts": time.time()}
+    params = urllib.parse.urlencode({
+        "client_id": g.client_id, "redirect_uri": redirect_uri, "response_type": "code",
+        "scope": _GDRIVE_SCOPE, "access_type": "offline", "prompt": "consent", "state": state})
+    return {"url": f"{_GOOGLE_AUTH}?{params}", "redirect_uri": redirect_uri}
+
+
+@app.get("/api/gdrive/oauth/callback")
+async def gdrive_oauth_callback(request: Request) -> HTMLResponse:
+    q = request.query_params
+    state = q.get("state")
+    st = _gdrive_states.pop(state, None) if state else None
+    if q.get("error") or not q.get("code") or not st:
+        return HTMLResponse(_gdrive_result_page(False, q.get("error") or "authorization was cancelled or expired — try Connect again"))
+    g = config.load().storage.gdrive
+    data = urllib.parse.urlencode({
+        "code": q["code"], "client_id": g.client_id, "client_secret": g.client_secret,
+        "redirect_uri": st["redirect_uri"], "grant_type": "authorization_code"}).encode()
+    try:
+        raw = urllib.request.urlopen(urllib.request.Request(_GOOGLE_TOKEN, data=data), timeout=20).read()
+        tok = json.loads(raw)
+    except Exception as e:
+        return HTMLResponse(_gdrive_result_page(False, f"token exchange failed: {e}"))
+    if "refresh_token" not in tok:
+        return HTMLResponse(_gdrive_result_page(
+            False, "Google did not return a refresh token. Remove this app under your Google Account → "
+                   "Security → Third-party access, then click Connect again."))
+    expiry = (datetime.datetime.now(datetime.timezone.utc)
+              + datetime.timedelta(seconds=int(tok.get("expires_in", 3600)))).isoformat()
+    rclone_token = json.dumps({
+        "access_token": tok["access_token"], "token_type": tok.get("token_type", "Bearer"),
+        "refresh_token": tok["refresh_token"], "expiry": expiry})
+    config.update({"storage": {"gdrive": {"token": rclone_token, "enabled": True}}})
+    return HTMLResponse(_gdrive_result_page(True, "The booth can now upload photos to your Google Drive."))
 
 
 # ---- background sync ------------------------------------------------------

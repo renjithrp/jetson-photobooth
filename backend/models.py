@@ -86,9 +86,31 @@ class PreviewSettings(BaseModel):
 
 class GDriveDestination(BaseModel):
     enabled: bool = False
-    rclone_remote: str = "gdrive"         # name of a configured rclone remote
+    rclone_remote: str = "gdrive"         # rclone.conf section name (app-managed)
     folder: str = "PhotoBooth"
     make_share_link: bool = True
+    # OAuth configured entirely from the admin panel (see /api/gdrive/authorize).
+    # Create an OAuth "Web application" client in Google Cloud, paste its id/secret,
+    # click Connect — the refresh token lands in `token` (rclone JSON format).
+    client_id: str = ""
+    client_secret: str = ""               # masked by the API
+    token: str = ""                       # rclone token JSON after authorizing (masked)
+    team_drive: str = ""                  # optional Shared Drive ID
+
+
+class S3Destination(BaseModel):
+    """Amazon S3 or any S3-compatible store (Wasabi, Backblaze B2, Cloudflare R2,
+    MinIO). Uploads via rclone — no extra Python deps. All fields set from admin."""
+    enabled: bool = False
+    provider: str = "AWS"                 # rclone S3 provider: AWS/Wasabi/Minio/Other/...
+    bucket: str = ""
+    region: str = "us-east-1"
+    endpoint_url: str = ""                # for S3-compatible stores; blank = AWS
+    access_key_id: str = ""
+    secret_access_key: str = ""           # masked by the API
+    prefix: str = "photobooth"            # key prefix (folder) inside the bucket
+    make_share_link: bool = True          # build a public URL for the QR
+    public_url_base: str = ""             # e.g. https://cdn.example.com ; blank = derive S3 URL
 
 
 class FTPDestination(BaseModel):
@@ -110,6 +132,7 @@ class StorageSettings(BaseModel):
     # offline) instead of blocking the capture. Turn off for legacy inline uploads.
     background_sync: bool = True
     gdrive: GDriveDestination = GDriveDestination()
+    s3: S3Destination = S3Destination()
     ftp: FTPDestination = FTPDestination()
 
 

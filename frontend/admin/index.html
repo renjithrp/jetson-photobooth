@@ -261,14 +261,51 @@
     </div>
     <div class="card"><h2>☁️ Google Drive
       <button class="btn btn-ghost btn-xs ml-auto" onclick="testGdrive()">Test</button></h2>
-      <div class="toggle border-b border-slate-100"><div class="t-txt">Upload to Google Drive (rclone)</div>
+      <p class="sub">One-time setup: in Google Cloud Console create an OAuth <b>Web application</b>
+        client, add the redirect URI below to it, then paste the Client ID + Secret here, <b>Save</b>,
+        and click <b>Connect</b>.</p>
+      <div class="toggle border-b border-slate-100"><div class="t-txt">Upload to Google Drive</div>
         <label class="sw"><input type="checkbox" data-path="storage.gdrive.enabled"><i></i></label></div>
       <div class="grid2 mt-2">
-        <div><label class="fld">rclone remote</label><input type="text" data-path="storage.gdrive.rclone_remote"></div>
+        <div><label class="fld">Client ID</label><input type="text" data-path="storage.gdrive.client_id"></div>
+        <div><label class="fld">Client Secret</label><input type="password" data-path="storage.gdrive.client_secret" placeholder="leave blank to keep"></div>
+      </div>
+      <div class="mt-1"><label class="fld">Authorized redirect URI — add this to your OAuth client</label>
+        <input type="text" id="gdriveRedirect" readonly onclick="this.select()"></div>
+      <div class="flex items-center gap-3 mt-2">
+        <button class="btn btn-primary btn-xs" onclick="connectGdrive()">Connect Google Drive</button>
+        <span id="gdriveStatus" class="text-sm text-slate-500">…</span>
+      </div>
+      <div class="grid2 mt-2">
         <div><label class="fld">Folder</label><input type="text" data-path="storage.gdrive.folder"></div>
+        <div><label class="fld">Shared Drive ID (optional)</label><input type="text" data-path="storage.gdrive.team_drive"></div>
       </div>
       <div class="toggle mt-1"><div class="t-txt">Create share links (for QR)</div>
         <label class="sw"><input type="checkbox" data-path="storage.gdrive.make_share_link"><i></i></label></div>
+    </div>
+    <div class="card"><h2>🪣 Amazon S3
+      <button class="btn btn-ghost btn-xs ml-auto" onclick="testS3()">Test</button></h2>
+      <p class="sub">Amazon S3 or any S3-compatible store (Wasabi, Backblaze B2, Cloudflare R2, MinIO).</p>
+      <div class="toggle border-b border-slate-100"><div class="t-txt">Upload to S3</div>
+        <label class="sw"><input type="checkbox" data-path="storage.s3.enabled"><i></i></label></div>
+      <div class="grid2 mt-2">
+        <div><label class="fld">Bucket</label><input type="text" data-path="storage.s3.bucket"></div>
+        <div><label class="fld">Region</label><input type="text" data-path="storage.s3.region" placeholder="us-east-1"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Access key ID</label><input type="text" data-path="storage.s3.access_key_id"></div>
+        <div><label class="fld">Secret access key</label><input type="password" data-path="storage.s3.secret_access_key" placeholder="leave blank to keep"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Key prefix (folder in bucket)</label><input type="text" data-path="storage.s3.prefix"></div>
+        <div><label class="fld">Provider</label><input type="text" data-path="storage.s3.provider" placeholder="AWS"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Endpoint URL (S3-compatible only)</label><input type="text" data-path="storage.s3.endpoint_url" placeholder="blank = AWS"></div>
+        <div><label class="fld">Public URL base (optional)</label><input type="text" data-path="storage.s3.public_url_base" placeholder="https://cdn.example.com"></div>
+      </div>
+      <div class="toggle mt-1"><div class="t-txt">Create share links (for QR)</div>
+        <label class="sw"><input type="checkbox" data-path="storage.s3.make_share_link"><i></i></label></div>
     </div>
     <div class="card"><h2>🗄 FTP
       <button class="btn btn-ghost btn-xs ml-auto" onclick="testFtp()">Test</button></h2>
@@ -517,7 +554,7 @@ function showTab(name){
   try{ localStorage.setItem("booth_tab", name); }catch(e){}
   if(name==="trigger") startZonePreview();
   if(name==="network"){ loadNet(); }
-  if(name==="sharing"){ loadSync(); loadPrinters(); }
+  if(name==="sharing"){ loadSync(); loadPrinters(); refreshGdriveStatus(); }
   window.scrollTo({top:0,behavior:"instant"});
 }
 
@@ -663,6 +700,26 @@ async function testGdrive(){ toast("Testing Google Drive…"); const r = await (
   toast(r.ok?("Drive OK "+(r.links?.[0]||"")):("Drive: "+r.error), !r.ok); }
 async function testFtp(){ toast("Testing FTP…"); const r = await (await fetch("/api/test/ftp",{method:"POST"})).json();
   toast(r.ok?"FTP OK ✓":("FTP: "+r.error), !r.ok); }
+async function testS3(){ toast("Testing S3…"); const r = await (await fetch("/api/test/s3",{method:"POST"})).json();
+  toast(r.ok?("S3 OK "+(r.links?.[0]||"")):("S3: "+r.error), !r.ok); }
+async function refreshGdriveStatus(){
+  const rd = document.getElementById("gdriveRedirect");
+  if(rd) rd.value = location.origin + "/api/gdrive/oauth/callback";
+  try{ const j = await (await fetch("/api/system/info")).json();
+    const el = document.getElementById("gdriveStatus");
+    if(el) el.innerHTML = j.gdrive_connected
+      ? "<span style='color:#16a34a;font-weight:600'>● Connected</span>"
+      : "<span style='color:#94a3b8'>● Not connected</span>";
+  }catch(e){}
+}
+async function connectGdrive(){
+  const r = await fetch("/api/gdrive/authorize");
+  if(!r.ok){ toast("Drive: "+(await r.text()), true); return; }
+  const j = await r.json();
+  window.open(j.url, "_blank");
+  toast("Sign in to Google in the new tab, then return here.");
+  let n=0; const iv=setInterval(async()=>{ if(++n>40) clearInterval(iv); await refreshGdriveStatus(); }, 3000);
+}
 async function loadGallery(){
   const items = await (await fetch("/api/gallery")).json();
   $("#gallery").innerHTML = items.map(it=>`
