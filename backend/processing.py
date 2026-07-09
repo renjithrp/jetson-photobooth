@@ -84,3 +84,9 @@ def apply_ai(img_path: Path, settings: Settings) -> None:
     """AI background remove/replace via GPU segmentation (see ai_effects)."""
     from . import ai_effects
     ai_effects.apply_background(img_path, settings)
+
+
+def apply_gaze(img_path: Path, settings: Settings) -> None:
+    """Gaze correction (see gaze_effects). Scaffold: measures + logs, no image change yet."""
+    from . import gaze_effects
+    gaze_effects.apply_gaze(img_path, settings)

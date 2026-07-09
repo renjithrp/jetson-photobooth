@@ -379,6 +379,26 @@
       <div class="toggle mt-1"><div class="t-txt">Use GPU</div>
         <label class="sw"><input type="checkbox" data-path="ai.use_gpu"><i></i></label></div>
     </div>
+    <div class="card"><h2>👀 Gaze correction (eye redirection)</h2>
+      <p class="sub"><b>Measurement scaffold</b> — when enabled, each shot is analysed for head
+        angle + eye-openness and the service log records how often a correction <i>would</i> fire.
+        Photos are <b>not</b> altered yet (the redirection model is the next phase). Watch it with
+        <code>journalctl -u photobooth -f | grep gaze</code>.</p>
+      <div class="toggle border-b border-slate-100"><div class="t-txt">Enabled (measure only)</div>
+        <label class="sw"><input type="checkbox" data-path="gaze.enabled"><i></i></label></div>
+      <div class="grid2 mt-2">
+        <div><label class="fld">Strength (0-100, used by the model step)</label>
+          <input type="range" min="0" max="100" data-path="gaze.strength"></div>
+        <div><label class="fld">Max head angle° (safety gate)</label>
+          <input type="number" min="0" max="90" data-path="gaze.max_head_angle"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Min eye openness (skip if more closed)</label>
+          <input type="text" data-path="gaze.min_eye_openness" placeholder="0.15"></div>
+      </div>
+      <div class="toggle mt-1"><div class="t-txt">Use GPU</div>
+        <label class="sw"><input type="checkbox" data-path="gaze.use_gpu"><i></i></label></div>
+    </div>
     <div class="card"><h2>👥 Face grouping (InsightFace · GPU)</h2>
       <p id="faceStatus" class="sub">…</p>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Group photos by face</div>

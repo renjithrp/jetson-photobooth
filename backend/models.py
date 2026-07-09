@@ -139,6 +139,23 @@ class AISettings(BaseModel):
     background_color: str = "#ffffff"    # solid fill for bg_remove / when no backdrop image
 
 
+class GazeSettings(BaseModel):
+    """Gaze correction (eye redirection) — SCAFFOLD, measurement only for now.
+
+    On each shot this detects faces, head pose and eye-openness and LOGS how often a
+    correction WOULD fire given the gate below — so you can see how relevant the feature
+    is on real guests before investing in a redirection model. It does NOT alter photos
+    yet; the actual eye-redirection step (a flow-warp ONNX run on each eye crop) is the
+    next phase and will honour `strength`. Reuses the InsightFace pack from `faces` for
+    detection + 106-pt landmarks + head pose (no extra model download)."""
+    model_config = {"protected_namespaces": ()}
+    enabled: bool = False
+    strength: int = 40                 # 0-100: how far to pull the iris toward centre (used by the model step)
+    max_head_angle: int = 20           # safety gate: skip when |yaw| or |pitch| exceeds this (degrees)
+    min_eye_openness: float = 0.15     # skip when an eye is more closed than this (EAR-like proxy)
+    use_gpu: bool = True               # CUDA/TensorRT EP when available, else CPU
+
+
 class PrintSettings(BaseModel):
     """Photo printing via CUPS. Works with dye-sub photo printers (DNP/Selphy/Mitsubishi)
     or any USB/network printer. The Arduino PRINT button prints the last session."""
@@ -191,6 +208,7 @@ class Settings(BaseModel):
     overlay: OverlaySettings = OverlaySettings()
     collage: CollageSettings = CollageSettings()
     ai: AISettings = AISettings()
+    gaze: GazeSettings = GazeSettings()
     share: ShareSettings = ShareSettings()
     faces: FacesSettings = FacesSettings()
     network: NetworkSettings = NetworkSettings()

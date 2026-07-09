@@ -93,6 +93,9 @@ class CaptureService:
             if s.overlay.enabled and s.overlay.apply_to in ("each", "both"):
                 for p in shots:
                     processing.apply_overlay(p, s)
+            if s.gaze.enabled:                          # runs before apply_ai so landmarks
+                for p in shots:                         # see the original (un-composited) photo
+                    processing.apply_gaze(p, s)
             if s.ai.enabled:
                 for p in shots:
                     processing.apply_ai(p, s)

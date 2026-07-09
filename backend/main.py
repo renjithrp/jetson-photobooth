@@ -91,6 +91,9 @@ async def lifespan(app: FastAPI):
     if s.ai.enabled:                                   # pre-load/fetch the segmentation model
         from . import ai_effects
         threading.Thread(target=ai_effects.warmup, args=(s,), daemon=True).start()
+    if s.gaze.enabled:                                 # pre-load the gaze detector (measure scaffold)
+        from . import gaze_effects
+        threading.Thread(target=gaze_effects.warmup, args=(s,), daemon=True).start()
     log.info("ready at %s (admin: %s/admin)", base_url(), base_url())
     yield
     watchdog.stop()
