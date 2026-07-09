@@ -35,9 +35,21 @@ reactivate_ap() {
 
 case "$ACTION" in
   install)
-    echo "== installing captive DNS hijack =="
-    mkdir -p "$DNSMASQ_DIR"
-    cp "$APP/deploy/captive-dnsmasq.conf" "$DNSMASQ_DST"
+    # MODE=proxy (default): pass-through — guests keep the booth's internet, so phones
+    #   stay connected and the selfie/download works in their real browser. Guests reach
+    #   photos by scanning the on-screen QR. RECOMMENDED (avoids the captive mini-browser,
+    #   which blocks the camera and drops no-internet Wi-Fi).
+    # MODE=offline: DNS blackhole — no guest internet, but the find-your-photos page
+    #   auto-opens on join. The in-portal selfie is unreliable on iOS.
+    MODE="${2:-proxy}"
+    if [ "$MODE" = "offline" ]; then
+      echo "== offline mode: installing captive DNS hijack (no guest internet, auto-popup) =="
+      mkdir -p "$DNSMASQ_DIR"
+      cp "$APP/deploy/captive-dnsmasq.conf" "$DNSMASQ_DST"
+    else
+      echo "== proxy/pass-through mode: guests keep internet; reach photos via the QR =="
+      rm -f "$DNSMASQ_DST"          # ensure no leftover DNS blackhole
+    fi
 
     echo "== installing photobooth-captive.service =="
     cp "$APP/deploy/photobooth-captive.service" /etc/systemd/system/
@@ -46,10 +58,15 @@ case "$ACTION" in
 
     reactivate_ap
     echo
-    echo "Captive portal ENABLED. One Wi-Fi QR now joins the booth AND opens the"
-    echo "find-your-photos page automatically. Guests have no general internet while"
-    echo "connected (expected). Test: join 'PhotoBooth' on a phone — the photos page"
-    echo "should pop up on its own within a few seconds."
+    if [ "$MODE" = "offline" ]; then
+      echo "Captive portal ENABLED (offline). Joining 'PhotoBooth' auto-opens the photos"
+      echo "page, but guests have no internet and the in-portal selfie is unreliable on iOS."
+    else
+      echo "Captive portal ENABLED (pass-through). Guests keep internet and stay connected;"
+      echo "they scan the on-screen photo QR to open their photos in their real browser —"
+      echo "selfie + downloads work reliably. Re-run with 'install offline' for the"
+      echo "no-internet auto-popup mode instead."
+    fi
     ;;
 
   remove)
