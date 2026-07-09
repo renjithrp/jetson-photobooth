@@ -46,9 +46,27 @@ _NO_CACHE = {"Cache-Control": "no-store, max-age=0"}
 _client: httpx.AsyncClient | None = None
 
 
+async def _detect_origin(configured: str) -> str:
+    """The backend runs HTTP or HTTPS on :8000 depending on whether a TLS cert is
+    installed. Probe the configured origin, then the other scheme, so the captive
+    proxy works regardless of what BOOTH_BACKEND was set to."""
+    alt = (configured.replace("https://", "http://") if configured.startswith("https://")
+           else configured.replace("http://", "https://"))
+    for origin in (configured, alt):
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=3.0) as c:
+                r = await c.get(origin + "/api/wifi/info")
+            if r.status_code < 500:
+                return origin
+        except Exception:
+            continue
+    return configured
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _client
+    global _client, BACKEND_ORIGIN
+    BACKEND_ORIGIN = await _detect_origin(BACKEND_ORIGIN)
     _client = httpx.AsyncClient(base_url=BACKEND_ORIGIN, verify=False, timeout=60.0)
     log.info("captive portal up on :80 -> %s (AP %s)", BACKEND_ORIGIN, AP_IP)
     yield

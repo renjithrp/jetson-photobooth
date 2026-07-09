@@ -14,6 +14,7 @@ from __future__ import annotations
 import subprocess
 
 HOTSPOT_CON = "photobooth-ap"          # NetworkManager connection name for the guest AP
+AP_IP = "192.168.50.1"                 # AP gateway IP — must match captive.py / captive-dnsmasq.conf
 
 
 def _nmcli(*args: str, timeout: int = 15) -> subprocess.CompletedProcess:
@@ -176,7 +177,10 @@ def hotspot_up(ssid: str, password: str, device: str | None = None,
                "autoconnect", "yes", "ssid", ssid,
                "802-11-wireless.mode", "ap", "802-11-wireless.band", band,
                "802-11-wireless.hidden", "yes" if hidden else "no",
-               "ipv4.method", "shared", "ipv6.method", "disabled",
+               # Pin the AP subnet so the captive portal / DNS hijack (which hardcode
+               # 192.168.50.1) match — NM's default shared subnet is 10.42.0.1 otherwise.
+               "ipv4.method", "shared", "ipv4.addresses", f"{AP_IP}/24",
+               "ipv6.method", "disabled",
                "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", password, timeout=30)
     if r.returncode != 0:
         return {"ok": False, "error": r.stderr.strip()}
