@@ -1,0 +1,24 @@
+# Hand-gesture trigger worker. Runs MediaPipe in an ISOLATED venv
+# (/opt/photobooth/gesture-venv) because MediaPipe needs numpy<2 while the booth's
+# GPU AI stack needs numpy>=2 — they can't share the main venv. The worker reads the
+# backend's buffered live-view (:8000/api/preview/stream, multi-client safe) and fires
+# :8000/api/capture on the configured gesture. See backend/gesture_worker.py.
+[Unit]
+Description=PhotoBooth hand-gesture trigger worker (isolated MediaPipe)
+After=photobooth.service photobooth-camera.service network-online.target
+Wants=photobooth.service
+
+[Service]
+Type=simple
+User=pb
+WorkingDirectory=/opt/photobooth
+Environment=BOOTH_APP=/opt/photobooth
+Environment=BOOTH_DATA=/opt/photobooth/data
+Environment=PYTHONUNBUFFERED=1
+# BOOTH_BACKEND left unset => the worker auto-detects http/https on :8000.
+ExecStart=/opt/photobooth/gesture-venv/bin/python /opt/photobooth/backend/gesture_worker.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
