@@ -34,12 +34,31 @@ gsettings set org.gnome.desktop.session idle-delay 0 2>/dev/null || true
 gsettings set org.gnome.desktop.screensaver lock-enabled false 2>/dev/null || true
 gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing' 2>/dev/null || true
 
-exec "$BIN" $CERTFLAG \
+# Launch in the background (not exec) so we can force the window truly
+# fullscreen afterwards. Chromium's --kiosk is unreliable under GNOME/mutter on
+# this 4K panel: the window can open decorated and half-tiled instead of
+# filling the screen. We ask the window manager to fullscreen it directly.
+"$BIN" $CERTFLAG \
   --kiosk "$URL" \
+  --start-fullscreen \
   --incognito --disk-cache-size=1 \
   --noerrdialogs --disable-infobars --no-first-run \
   --disable-session-crashed-bubble --disable-translate \
   --autoplay-policy=no-user-gesture-required \
   --check-for-update-interval=31536000 \
   --overscroll-history-navigation=0 \
-  --password-store=basic
+  --password-store=basic &
+KPID=$!
+
+# Belt-and-braces: re-assert real fullscreen via the WM until the window shows
+# up and accepts it (title becomes "Photo Booth" once the page loads).
+if command -v wmctrl >/dev/null 2>&1; then
+  ( for _ in $(seq 1 30); do
+      if wmctrl -l 2>/dev/null | grep -q "Photo Booth"; then
+        wmctrl -r "Photo Booth" -b add,fullscreen 2>/dev/null || true
+      fi
+      sleep 1
+    done ) &
+fi
+
+wait "$KPID"

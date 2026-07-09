@@ -23,7 +23,7 @@ sudo apt-get update -y
 wait_apt
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
   python3.12-venv python3-pip curl git build-essential rclone \
-  network-manager v4l-utils cups printer-driver-gutenprint || true
+  network-manager v4l-utils cups printer-driver-gutenprint wmctrl || true
 # Chromium ships as a snap on Ubuntu 24.04
 if ! command -v chromium >/dev/null 2>&1 && ! command -v chromium-browser >/dev/null 2>&1; then
   say "chromium (snap)"
