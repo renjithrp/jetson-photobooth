@@ -155,6 +155,11 @@ function setPreview(){
 function show(name){
   curState = name;
   layers.forEach(n => L(n).classList.toggle("hidden", n !== name));
+  // Hide the live preview while a shot is being processed/reviewed. The Sony
+  // camera briefly streams a post-capture review image (and the MJPEG <img> holds
+  // its last frame while the stream pauses), so without this the just-taken photo
+  // flashes behind the spinner before the review screen appears.
+  L("preview").style.visibility = (name === "processing" || name === "review") ? "hidden" : "visible";
   renderFaceZone();
 }
 function scheduleAttract(){
