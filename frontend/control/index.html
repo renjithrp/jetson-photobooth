@@ -88,6 +88,8 @@
   #photoQr img{width:120px;height:120px;display:block}
   a.dl{background:#0f766e;color:#fff;text-decoration:none;padding:13px 20px;border-radius:12px;font-weight:700;font-size:15px}
   a.dl:active{background:#0b5e57}
+  svg.ic{width:1.1em;height:1.1em;stroke:currentColor;fill:none;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round;vertical-align:-.15em}
 </style>
 </head>
 <body>
@@ -97,15 +99,15 @@
   <div id="flash"></div>
 
   <div id="topbar">
-    <div id="title">📸 Booth</div>
+    <div id="title"><svg class="ic" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg> Booth</div>
     <div id="hint"></div>
-    <button class="iconbtn" id="fsBtn" title="Fullscreen" style="display:flex">⛶</button>
+    <button class="iconbtn" id="fsBtn" title="Fullscreen" style="display:flex"><svg class="ic" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
     <button class="iconbtn" id="layoutBtn" title="Switch layout" style="display:flex">▭</button>
-    <button class="iconbtn" id="findIcon" title="Find my photos">🔍</button>
+    <button class="iconbtn" id="findIcon" title="Find my photos"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
   </div>
 
   <div id="dock">
-    <div class="slot"><button id="galleryBtn" aria-label="Gallery">🖼</button></div>
+    <div class="slot"><button id="galleryBtn" aria-label="Gallery"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg></button></div>
     <button id="shutter" aria-label="Capture"></button>
     <div class="slot"></div>
   </div>
@@ -123,7 +125,7 @@
   <img id="photoBig" alt="">
   <div id="photoMeta">
     <div id="photoQr"><img id="photoQrImg" alt="QR"></div>
-    <a class="dl" id="photoDl" href="#" target="_blank" download>⬇ Download</a>
+    <a class="dl" id="photoDl" href="#" target="_blank" download><svg class="ic" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download</a>
   </div>
 </div>
 
@@ -133,6 +135,7 @@
 const L = id => document.getElementById(id);
 let previewUrl = "/api/preview/stream";
 let capturing = false;
+const thumbUrl = u => u.replace(/^\/captures\//, "/thumbs/");
 
 /* ---------- fullscreen ---------- */
 function fsActive(){ return document.fullscreenElement || document.webkitFullscreenElement; }
@@ -146,7 +149,9 @@ async function toggleFullscreen(){
     }
   }catch(e){ hint("Fullscreen not supported — add to Home Screen"); }
 }
-function syncFsIcon(){ L("fsBtn").textContent = fsActive() ? "🗗" : "⛶"; }
+const FS_MAX = '<svg class="ic" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+const FS_MIN = '<svg class="ic" viewBox="0 0 24 24"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
+function syncFsIcon(){ L("fsBtn").innerHTML = fsActive() ? FS_MIN : FS_MAX; }
 L("fsBtn").onclick = toggleFullscreen;
 document.addEventListener("fullscreenchange", syncFsIcon);
 document.addEventListener("webkitfullscreenchange", syncFsIcon);
@@ -228,14 +233,14 @@ async function loadGallery(openView){
   try{ items = await (await fetch("/api/gallery")).json(); }catch(e){}
   if(items[0] && items[0].images && items[0].images[0]){
     L("galleryBtn").textContent = "";
-    L("galleryBtn").style.backgroundImage = `url("${items[0].images[0]}")`;
+    L("galleryBtn").style.backgroundImage = `url("${thumbUrl(items[0].images[0])}")`;
   }
   if(openView){
     L("galleryTitle").textContent = "Gallery";
     const grid = L("galleryGrid");
     const flat = items.flatMap(it => (it.images||[]).map(u => ({u, share:it.share_url})));
     grid.innerHTML = flat.length
-      ? flat.map(p => `<img src="${p.u}" data-full="${p.u}" data-share="${p.share||''}">`).join("")
+      ? flat.map(p => `<img src="${thumbUrl(p.u)}" loading="lazy" data-full="${p.u}" data-share="${p.share||''}">`).join("")
       : `<div class="empty">No photos yet.<br>Tap the shutter to take one.</div>`;
     showOverlay("galleryView");
   }
@@ -264,7 +269,7 @@ function hideOverlay(id){ L(id).classList.remove("show"); }
 function onEvent(ev){
   switch(ev.type){
     case "countdown": hint("Countdown " + ev.value, true); break;
-    case "capturing": hint("Say cheese! 😄", true); break;
+    case "capturing": hint("Say cheese!", true); break;
     case "processing": hint("Processing…", true); break;
     case "review":
       hint("Done ✓");
@@ -299,7 +304,7 @@ L("selfie").onchange = async () => {
     const r = await (await fetch("/api/faces/find",{method:"POST",body:fd})).json();
     if(r.matched && r.photos && r.photos.length){
       L("galleryTitle").textContent = `Found ${r.photos.length} photo(s) of you`;
-      L("galleryGrid").innerHTML = r.photos.map(u=>`<img src="${u}" data-full="${u}" data-share="${u}">`).join("");
+      L("galleryGrid").innerHTML = r.photos.map(u=>`<img src="${thumbUrl(u)}" loading="lazy" data-full="${u}" data-share="${u}">`).join("");
       showOverlay("galleryView"); hint("");
     } else { hint(r.error || "No match — try a clearer selfie"); }
   }catch(e){ hint("Find failed"); }

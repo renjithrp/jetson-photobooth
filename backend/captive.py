@@ -28,7 +28,8 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from starlette.background import BackgroundTask
 
 log = logging.getLogger("captive")
 
@@ -37,7 +38,7 @@ BACKEND_ORIGIN = os.environ.get("BOOTH_BACKEND", "https://127.0.0.1:8000")
 AP_IP = os.environ.get("BOOTH_AP_IP", "192.168.50.1")
 
 # Routes handed through to the real backend over loopback TLS.
-_PROXY_PREFIXES = ("/api/", "/captures/", "/s/")
+_PROXY_PREFIXES = ("/api/", "/captures/", "/thumbs/", "/s/")
 # Never proxy hop-by-hop / length headers — httpx already decoded the body.
 _DROP_RESP_HEADERS = {"content-encoding", "transfer-encoding", "connection",
                       "content-length", "keep-alive"}
@@ -82,24 +83,29 @@ def _guest_page() -> FileResponse:
 
 
 async def _proxy(request: Request, path: str) -> Response:
-    """Forward a guest request to the main backend and relay the response."""
+    """Forward a guest request to the main backend and STREAM the response back.
+    Streaming (vs buffering) matters here: photos and multi-photo ZIPs are tens of MB,
+    and several guests download at once — buffering them all in RAM starved the 8GB
+    Jetson and added seconds of time-to-first-byte."""
     assert _client is not None
     headers = {k: v for k, v in request.headers.items()
                if k.lower() not in ("host", "connection", "accept-encoding")}
+    req = _client.build_request(
+        request.method, httpx.URL(path=path, query=request.url.query.encode()),
+        headers=headers, content=await request.body(),
+    )
     try:
-        upstream = await _client.request(
-            request.method, httpx.URL(path=path, query=request.url.query.encode()),
-            headers=headers, content=await request.body(),
-        )
+        upstream = await _client.send(req, stream=True)
     except httpx.HTTPError as e:
         log.warning("proxy %s %s failed: %s", request.method, path, e)
         return Response("Photo booth is starting up — please try again.",
                         status_code=502, media_type="text/plain")
     out_headers = {k: v for k, v in upstream.headers.items()
                    if k.lower() not in _DROP_RESP_HEADERS}
-    return Response(content=upstream.content, status_code=upstream.status_code,
-                    headers=out_headers,
-                    media_type=upstream.headers.get("content-type"))
+    return StreamingResponse(upstream.aiter_raw(), status_code=upstream.status_code,
+                             headers=out_headers,
+                             media_type=upstream.headers.get("content-type"),
+                             background=BackgroundTask(upstream.aclose))
 
 
 @app.api_route("/{full_path:path}",

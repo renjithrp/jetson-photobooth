@@ -69,14 +69,55 @@
   #zoneBox.editable #zoneHandle{ display:block; }
   .pill{ display:inline-flex; align-items:center; gap:.35rem; font-size:.78rem; font-weight:600;
     padding:.2rem .55rem; border-radius:999px; background:#f1f5f9; color:#475569; }
+  /* standard (SVG) icons + status dots — replaces the old emoji icons */
+  svg.ic{ width:1.05em; height:1.05em; stroke:currentColor; fill:none; stroke-width:2;
+    stroke-linecap:round; stroke-linejoin:round; vertical-align:-.16em; flex:none; }
+  .card h2 svg.ic, .tab svg.ic{ color:var(--teal2); }
+  .tab.active svg.ic{ color:#fff; }
+  .dot{ display:inline-block; width:.62em; height:.62em; border-radius:50%;
+    background:#cbd5e1; vertical-align:baseline; margin-right:.15rem; }
+  .dot.g{ background:#16a34a; } .dot.y{ background:#eab308; } .dot.r{ background:#dc2626; }
 </style>
 </head>
 <body class="bg-slate-100 text-slate-800">
 
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-cam" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M12 20a8 8 0 1 0-8-8"/><path d="m12 12 4-4"/><path d="M4 12h.01"/><path d="M6 7h.01"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 2h6"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3z"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M5 13a10 10 0 0 1 14 0"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M2 9.5a15 15 0 0 1 20 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12 2H2v10l9.3 9.3a1.7 1.7 0 0 0 2.4 0l7.6-7.6a1.7 1.7 0 0 0 0-2.4L12 2z"/><line x1="7" y1="7" x2="7.01" y2="7"/></symbol>
+  <symbol id="i-img" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.6a2 2 0 0 1-1 1.8l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.8v-.6a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-hand" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v2"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></symbol>
+  <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></symbol>
+  <symbol id="i-btn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-hdd" viewBox="0 0 24 24"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></symbol>
+  <symbol id="i-sync" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-cast" viewBox="0 0 24 24"><path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><line x1="2" y1="20" x2="2.01" y2="20"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+</defs></svg>
+
 <!-- ===== Login gate ===== -->
 <div id="gate" class="fixed inset-0 bg-slate-900/95 flex items-center justify-center z-50 px-5">
   <div class="bg-white rounded-2xl p-7 w-full max-w-xs text-center shadow-2xl">
-    <div class="text-4xl mb-2">📸</div>
+    <div class="mb-2 text-teal-700"><svg class="ic" style="width:2.5rem;height:2.5rem"><use href="#i-cam"/></svg></div>
     <h1 class="text-lg font-bold mb-1">Photo Booth Admin</h1>
     <p class="text-sm text-slate-400 mb-4">Enter your PIN to continue</p>
     <input id="pin" type="password" inputmode="numeric" placeholder="••••" class="text-center text-xl tracking-widest mb-3">
@@ -88,14 +129,14 @@
 <!-- ===== App bar ===== -->
 <header class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-slate-200">
   <div class="max-w-4xl mx-auto px-4 py-2.5 flex items-center gap-3">
-    <div class="text-xl">📸</div>
+    <div class="text-teal-700"><svg class="ic" style="width:1.5rem;height:1.5rem"><use href="#i-cam"/></svg></div>
     <div class="min-w-0">
       <div id="barName" class="font-bold leading-tight truncate">Photo Booth</div>
       <div id="barState" class="text-xs text-slate-400 leading-tight">connecting…</div>
     </div>
     <div class="ml-auto flex items-center gap-2">
-      <button class="btn btn-ghost btn-xs" onclick="capture()">📷 Test</button>
-      <button class="btn btn-xs" id="saveBtn" onclick="save()">💾 Save</button>
+      <button class="btn btn-ghost btn-xs" onclick="capture()"><svg class="ic"><use href="#i-cam"/></svg> Test</button>
+      <button class="btn btn-xs" id="saveBtn" onclick="save()"><svg class="ic"><use href="#i-save"/></svg> Save</button>
     </div>
   </div>
   <div class="max-w-4xl mx-auto px-3 pb-2">
@@ -108,7 +149,7 @@
   <!-- ============ STATUS ============ -->
   <section data-panel="status">
     <div id="status" class="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4"></div>
-    <div class="card"><h2>⚙️ System control</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-gear"/></svg> System control</h2>
       <p class="sub">Restart a service if something gets stuck. The app restarts in the background — this page reconnects in a few seconds.</p>
       <div class="flex flex-wrap gap-2">
         <button class="btn btn-ghost" onclick="svc('photobooth','restart')">↻ Restart app</button>
@@ -117,26 +158,26 @@
         <button class="btn btn-ghost" onclick="svc('photobooth-kiosk','stop')">■ Stop kiosk</button>
         <button class="btn btn-ghost" onclick="svc('photobooth-kiosk','start')">▶ Start kiosk</button>
       </div>
-      <p class="mt-3 text-sm text-slate-500">📱 Capture from your phone:
+      <p class="mt-3 text-sm text-slate-500"><svg class="ic"><use href="#i-phone"/></svg> Capture from your phone:
         <a class="text-teal-600 font-semibold underline" href="/control" target="_blank">open remote control →</a></p>
     </div>
   </section>
 
   <!-- ============ TRIGGER ============ -->
   <section data-panel="trigger" style="display:none">
-    <div class="card"><h2>🎬 How a photo is triggered</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-zap"/></svg> How a photo is triggered</h2>
       <p class="sub">Choose what starts a capture. Gesture watches the live camera for a hand sign; Arduino is a physical USB button.</p>
       <div class="grid2">
         <div><label class="fld">Trigger mode</label><select data-path="trigger.mode">
-          <option value="gesture">✋ Hand gesture</option>
-          <option value="arduino">🔘 USB button (Arduino)</option>
+          <option value="gesture">Hand gesture</option>
+          <option value="arduino">USB button (Arduino)</option>
           <option value="both">Both</option></select></div>
         <div><label class="fld">Cooldown after a photo (s)</label>
           <input type="number" data-float step="0.5" data-path="trigger.cooldown_seconds"></div>
       </div>
     </div>
 
-    <div class="card"><h2>✋ Gesture</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-hand"/></svg> Gesture</h2>
       <p class="sub">The hand sign guests show to start. Hold it briefly to avoid accidental triggers.</p>
       <div class="grid2">
         <div><label class="fld">Gesture</label><select data-path="trigger.gesture_type">
@@ -156,7 +197,7 @@
     </div>
 
     <!-- Face gating -->
-    <div class="card"><h2>🙂 Require a face in the zone</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-smile"/></svg> Require a face in the zone</h2>
       <p class="sub">Stops the booth firing when no one is actually in front of it. When on, a gesture only counts if a face is detected inside the target zone below.</p>
       <div class="toggle border-b border-slate-100">
         <div><div class="t-txt">Require a face to be present</div>
@@ -166,10 +207,10 @@
       <div id="zoneWrap-outer" class="mt-3">
         <div class="grid2 items-end mb-3">
           <div><label class="fld">Zone shape</label><select data-path="trigger.face_region">
-            <option value="center_square">⬛ Centre square</option>
-            <option value="center_wide">▭ Centre wide</option>
-            <option value="full">⬜ Whole frame</option>
-            <option value="custom">✎ Custom (drag below)</option></select></div>
+            <option value="center_square">Centre square</option>
+            <option value="center_wide">Centre wide</option>
+            <option value="full">Whole frame</option>
+            <option value="custom">Custom (drag below)</option></select></div>
           <div><label class="fld">Min face size (0 = any)</label>
             <input type="number" data-float step="0.02" data-path="trigger.face_min_size"></div>
         </div>
@@ -187,7 +228,7 @@
       </div>
     </div>
 
-    <div class="card"><h2>🔘 USB button (Arduino Nano)</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-btn"/></svg> USB button (Arduino Nano)</h2>
       <p class="sub">A physical button wired to an Arduino Nano over USB. The Nano prints a line
         on press; the booth fires a capture. Auto-detects the port and reconnects if unplugged.
         Only used when the trigger mode includes Arduino.</p>
@@ -207,7 +248,7 @@
 
   <!-- ============ CAPTURE ============ -->
   <section data-panel="capture" style="display:none">
-    <div class="card"><h2>⏱ Timing</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-timer"/></svg> Timing</h2>
       <div class="grid2">
         <div><label class="fld">Countdown (s)</label><input type="number" data-path="timer.countdown_seconds"></div>
         <div><label class="fld">Number of shots</label><input type="number" data-path="timer.num_shots"></div>
@@ -220,7 +261,7 @@
         <div><label class="fld">Attract screen after idle (s)</label><input type="number" data-path="timer.attract_after_seconds"></div>
       </div>
     </div>
-    <div class="card"><h2>📷 Camera</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-cam"/></svg> Camera</h2>
       <div class="grid2">
         <div><label class="fld">Backend</label><select data-path="camera.backend">
           <option>mock</option><option>sony</option><option>webcam</option></select></div>
@@ -232,7 +273,7 @@
         <div><label class="fld">Capture output dir</label><input type="text" data-path="camera.capture_output_dir"></div>
       </div>
     </div>
-    <div class="card"><h2>🖥 Live preview</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-monitor"/></svg> Live preview</h2>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Preview enabled</div>
         <label class="sw"><input type="checkbox" data-path="preview.enabled"><i></i></label></div>
       <div class="grid2 mt-2">
@@ -251,7 +292,7 @@
 
   <!-- ============ SHARING ============ -->
   <section data-panel="sharing" style="display:none">
-    <div class="card"><h2>💾 Storage</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-hdd"/></svg> Storage</h2>
       <div class="grid2">
         <div><label class="fld">Local folder</label><input type="text" data-path="storage.local_dir"></div>
         <div><label class="fld">Max sessions kept (0 = ∞)</label><input type="number" data-path="storage.max_local_sessions"></div>
@@ -259,7 +300,7 @@
       <div class="toggle mt-1"><div class="t-txt">Keep local copies</div>
         <label class="sw"><input type="checkbox" data-path="storage.keep_local"><i></i></label></div>
     </div>
-    <div class="card"><h2>☁️ Google Drive
+    <div class="card"><h2><svg class="ic"><use href="#i-cloud"/></svg> Google Drive
       <button class="btn btn-ghost btn-xs ml-auto" onclick="testGdrive()">Test</button></h2>
       <p class="sub">One-time setup: in Google Cloud Console create an OAuth <b>Web application</b>
         client, add the redirect URI below to it, then paste the Client ID + Secret here, <b>Save</b>,
@@ -283,7 +324,7 @@
       <div class="toggle mt-1"><div class="t-txt">Create share links (for QR)</div>
         <label class="sw"><input type="checkbox" data-path="storage.gdrive.make_share_link"><i></i></label></div>
     </div>
-    <div class="card"><h2>🪣 Amazon S3
+    <div class="card"><h2><svg class="ic"><use href="#i-db"/></svg> Amazon S3
       <button class="btn btn-ghost btn-xs ml-auto" onclick="testS3()">Test</button></h2>
       <p class="sub">Amazon S3 or any S3-compatible store (Wasabi, Backblaze B2, Cloudflare R2, MinIO).</p>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Upload to S3</div>
@@ -307,7 +348,7 @@
       <div class="toggle mt-1"><div class="t-txt">Create share links (for QR)</div>
         <label class="sw"><input type="checkbox" data-path="storage.s3.make_share_link"><i></i></label></div>
     </div>
-    <div class="card"><h2>🗄 FTP
+    <div class="card"><h2><svg class="ic"><use href="#i-server"/></svg> FTP
       <button class="btn btn-ghost btn-xs ml-auto" onclick="testFtp()">Test</button></h2>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Upload to FTP</div>
         <label class="sw"><input type="checkbox" data-path="storage.ftp.enabled"><i></i></label></div>
@@ -327,7 +368,7 @@
           <label class="sw"><input type="checkbox" data-path="storage.ftp.passive"><i></i></label></div>
       </div>
     </div>
-    <div class="card"><h2>🔄 Background sync
+    <div class="card"><h2><svg class="ic"><use href="#i-sync"/></svg> Background sync
       <button class="btn btn-ghost btn-xs ml-auto" onclick="retrySync()">Retry now</button></h2>
       <p class="sub">Uploads run in the background with automatic retry — captures never wait on the
         network, and anything queued while offline uploads itself when the link returns.</p>
@@ -338,13 +379,42 @@
       <div id="syncStatus" class="mt-3 text-sm text-slate-500">…</div>
     </div>
 
-    <div class="card"><h2>🔗 Share / QR</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-link"/></svg> Share / QR</h2>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Show QR code after capture</div>
         <label class="sw"><input type="checkbox" data-path="share.qr_enabled"><i></i></label></div>
       <div class="mt-2"><label class="fld">Public base URL (blank = auto)</label><input type="text" data-path="share.base_url"></div>
     </div>
 
-    <div class="card"><h2>🖨 Printing
+    <div class="card"><h2><svg class="ic"><use href="#i-mail"/></svg> Email photos to guests
+      <button class="btn btn-ghost btn-xs ml-auto" onclick="testEmail()">Send test</button></h2>
+      <p class="sub">Guests on the find-your-photos page can email themselves their selected
+        photos. Works with any SMTP provider — for Gmail create an <b>app password</b>
+        (Google Account → Security → 2-Step Verification → App passwords).</p>
+      <div class="toggle border-b border-slate-100"><div class="t-txt">Allow emailing photos</div>
+        <label class="sw"><input type="checkbox" data-path="share.email.enabled"><i></i></label></div>
+      <div class="grid2 mt-2">
+        <div><label class="fld">SMTP host</label><input type="text" data-path="share.email.smtp_host" placeholder="smtp.gmail.com"></div>
+        <div><label class="fld">SMTP port</label><input type="number" data-path="share.email.smtp_port"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">SMTP username</label><input type="text" data-path="share.email.smtp_user" placeholder="booth@gmail.com"></div>
+        <div><label class="fld">SMTP password</label><input type="password" data-path="share.email.smtp_password" placeholder="leave blank to keep"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">From address (blank = username)</label><input type="text" data-path="share.email.from_addr"></div>
+        <div><label class="fld">Subject</label><input type="text" data-path="share.email.subject"></div>
+      </div>
+      <div class="grid2 mt-1 items-center">
+        <div class="toggle"><div><div class="t-txt">STARTTLS</div>
+          <div class="t-sub">On for port 587; off = implicit SSL (port 465)</div></div>
+          <label class="sw"><input type="checkbox" data-path="share.email.use_tls"><i></i></label></div>
+        <div><label class="fld">Max attachment total (MB)</label><input type="number" data-path="share.email.max_attach_mb"></div>
+      </div>
+      <div class="mt-2"><label class="fld">Test recipient (blank = SMTP username)</label>
+        <input type="text" id="emailTestTo" placeholder="you@example.com"></div>
+    </div>
+
+    <div class="card"><h2><svg class="ic"><use href="#i-print"/></svg> Printing
       <button class="btn btn-ghost btn-xs ml-auto" onclick="loadPrinters()">↻ Printers</button>
       <button class="btn btn-ghost btn-xs" onclick="testPrint()">Test print</button></h2>
       <p id="printStatus" class="sub">…</p>
@@ -372,7 +442,7 @@
 
   <!-- ============ EFFECTS ============ -->
   <section data-panel="effects" style="display:none">
-    <div class="card"><h2>🖼 Overlay &amp; collage</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-img"/></svg> Overlay &amp; collage</h2>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Overlay enabled</div>
         <label class="sw"><input type="checkbox" data-path="overlay.enabled"><i></i></label></div>
       <div class="grid2 mt-2">
@@ -395,7 +465,7 @@
       </div>
       <div class="mt-1"><label class="fld">Background color</label><input type="text" data-path="collage.background"></div>
     </div>
-    <div class="card"><h2>🧠 AI background (GPU segmentation)</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-cpu"/></svg> AI background (GPU segmentation)</h2>
       <p class="sub">Portrait segmentation drops the background or swaps in a virtual backdrop —
         no green screen. Runs on the GPU (falls back to CPU).</p>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Enabled</div>
@@ -416,7 +486,7 @@
       <div class="toggle mt-1"><div class="t-txt">Use GPU</div>
         <label class="sw"><input type="checkbox" data-path="ai.use_gpu"><i></i></label></div>
     </div>
-    <div class="card"><h2>👀 Gaze correction (eye redirection)</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-eye"/></svg> Gaze correction (eye redirection)</h2>
       <p class="sub"><b>Measurement scaffold</b> — when enabled, each shot is analysed for head
         angle + eye-openness and the service log records how often a correction <i>would</i> fire.
         Photos are <b>not</b> altered yet (the redirection model is the next phase). Watch it with
@@ -436,7 +506,7 @@
       <div class="toggle mt-1"><div class="t-txt">Use GPU</div>
         <label class="sw"><input type="checkbox" data-path="gaze.use_gpu"><i></i></label></div>
     </div>
-    <div class="card"><h2>👥 Face grouping (InsightFace · GPU)</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-users"/></svg> Face grouping (InsightFace · GPU)</h2>
       <p id="faceStatus" class="sub">…</p>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Group photos by face</div>
         <label class="sw"><input type="checkbox" data-path="faces.enabled"><i></i></label></div>
@@ -465,15 +535,15 @@
 
   <!-- ============ NETWORK ============ -->
   <section data-panel="network" style="display:none">
-    <div class="card"><h2>📶 Connection
+    <div class="card"><h2><svg class="ic"><use href="#i-wifi"/></svg> Connection
       <button class="btn btn-ghost btn-xs ml-auto" onclick="loadNet()">↻ Refresh</button></h2>
       <p class="sub">The M.2 radio keeps the booth online (cloud sync, updates). The USB Wi-Fi
         dongle runs the guest hotspot — so the booth works online <b>and</b> offline at once.</p>
       <div id="netStatus" class="grid grid-cols-2 gap-3"></div>
     </div>
 
-    <div class="card"><h2>🔌 Join a Wi-Fi network
-      <button class="btn btn-ghost btn-xs ml-auto" onclick="scanWifi()">🔍 Scan</button></h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-link"/></svg> Join a Wi-Fi network
+      <button class="btn btn-ghost btn-xs ml-auto" onclick="scanWifi()"><svg class="ic"><use href="#i-search"/></svg> Scan</button></h2>
       <p class="sub">Connect the booth to the internet (the management radio). Changing this won't
         affect the guest hotspot.</p>
       <div id="wifiList" class="mt-1"></div>
@@ -484,7 +554,7 @@
       <div class="mt-2"><button class="btn" onclick="joinWifi()">Connect</button></div>
     </div>
 
-    <div class="card"><h2>📡 Guest hotspot</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-cast"/></svg> Guest hotspot</h2>
       <p class="sub">A private Wi-Fi guests join to get their photos with no internet. Runs on the
         USB dongle so the booth stays online. Password must be at least 8 characters.</p>
       <div class="toggle border-b border-slate-100">
@@ -508,7 +578,7 @@
 
   <!-- ============ GENERAL ============ -->
   <section data-panel="general" style="display:none">
-    <div class="card"><h2>🏷 Branding</h2>
+    <div class="card"><h2><svg class="ic"><use href="#i-tag"/></svg> Branding</h2>
       <div class="grid2">
         <div><label class="fld">Booth name</label><input type="text" data-path="general.booth_name"></div>
         <div><label class="fld">Admin PIN</label><input type="text" data-path="general.admin_pin" placeholder="leave blank to keep"></div>
@@ -522,7 +592,7 @@
 
   <!-- ============ GALLERY ============ -->
   <section data-panel="gallery" style="display:none">
-    <div class="card"><h2>🖼 Gallery
+    <div class="card"><h2><svg class="ic"><use href="#i-img"/></svg> Gallery
       <button class="btn btn-ghost btn-xs ml-auto" onclick="loadGallery()">↻ Refresh</button></h2>
       <div id="gallery" class="grid grid-cols-3 sm:grid-cols-5 gap-3 mt-2"></div>
     </div>
@@ -540,13 +610,15 @@ function setPath(o,p,v){ const k=p.split("."); let c=o;
   for(let i=0;i<k.length-1;i++){ c[k[i]]=c[k[i]]||{}; c=c[k[i]]; } c[k[k.length-1]]=v; }
 
 /* ---- tabs ---- */
+const ic = n => `<svg class="ic"><use href="#i-${n}"/></svg>`;
+const dot = c => `<span class="dot ${c||""}"></span>`;
 const TABS = [
-  ["status","📊 Status"],["trigger","🎬 Trigger"],["capture","📷 Capture"],
-  ["sharing","🔗 Sharing"],["effects","✨ Effects"],["network","📶 Network"],
-  ["general","🏷 General"],["gallery","🖼 Gallery"],
+  ["status","gauge","Status"],["trigger","zap","Trigger"],["capture","cam","Capture"],
+  ["sharing","link","Sharing"],["effects","spark","Effects"],["network","wifi","Network"],
+  ["general","tag","General"],["gallery","img","Gallery"],
 ];
 function buildTabs(){
-  $("#tabs").innerHTML = TABS.map(([k,l])=>`<button class="tab" data-tab="${k}" onclick="showTab('${k}')">${l}</button>`).join("");
+  $("#tabs").innerHTML = TABS.map(([k,i,l])=>`<button class="tab" data-tab="${k}" onclick="showTab('${k}')">${ic(i)} ${l}</button>`).join("");
 }
 function showTab(name){
   $$(".tab").forEach(t=>t.classList.toggle("active", t.dataset.tab===name));
@@ -594,7 +666,7 @@ async function save(){
   $("#saveBtn").textContent="Saving…";
   const r = await fetch("/api/settings",{method:"PUT",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(collect())});
-  $("#saveBtn").textContent="💾 Save";
+  $("#saveBtn").innerHTML=ic("save")+" Save";
   if (r.status === 401){ $("#gate").style.display="flex"; toast("Session expired — log in again", true); return; }
   if (r.ok){ SETTINGS = await r.json(); populate(); toast("Saved ✓"); }
   else { toast("Save failed: "+(await r.text()), true); }
@@ -663,14 +735,14 @@ function setupZoneDrag(){
 async function loadStatus(){
   let j; try{ j = await (await fetch("/api/system/info")).json(); }catch(e){ return; }
   $("#barState").textContent = (j.busy?"● busy":"● idle") + " · " + j.trigger_mode + (j.require_face?" + face":"");
-  const cam = j.camera.ok ? `<span class="text-emerald-600">🟢 ${j.camera.backend}</span>`
-    : `<span class="text-red-500">🔴 ${j.camera.backend}</span> <span class="text-slate-400">${j.camera.detail||""}</span>`;
+  const cam = j.camera.ok ? `<span class="text-emerald-600">${dot("g")} ${j.camera.backend}</span>`
+    : `<span class="text-red-500">${dot("r")} ${j.camera.backend}</span> <span class="text-slate-400">${j.camera.detail||""}</span>`;
   const cs = j.camera_stream;
   let stream;
-  if(cs == null) stream = j.daemon_connected===null ? "—" : (j.daemon_connected ? "🟢 connected" : "🔴 offline");
-  else if(cs.streaming) stream = `<span class="text-emerald-600">🟢 streaming · ${cs.fps} fps</span>`;
-  else if(cs.connected) stream = `<span class="text-amber-500">🟡 up, no frames…</span>`;
-  else stream = `<span class="text-red-500">🔴 offline</span>`;
+  if(cs == null) stream = j.daemon_connected===null ? "—" : (j.daemon_connected ? dot("g")+" connected" : dot("r")+" offline");
+  else if(cs.streaming) stream = `<span class="text-emerald-600">${dot("g")} streaming · ${cs.fps} fps</span>`;
+  else if(cs.connected) stream = `<span class="text-amber-500">${dot("y")} up, no frames…</span>`;
+  else stream = `<span class="text-red-500">${dot("r")} offline</span>`;
   if(j.watchdog_restarts) stream += ` <span class="text-slate-400 text-xs">(auto-healed ${j.watchdog_restarts}×)</span>`;
   const disk = j.disk ? `${j.disk.free_gb} GB free · ${j.disk.used_pct}% used` : "—";
   const tile=(t,v)=>`<div class="card !mb-0"><div class="text-xs text-slate-400 mb-1">${t}</div><div class="text-sm font-semibold break-all">${v}</div></div>`;
@@ -702,6 +774,13 @@ async function testFtp(){ toast("Testing FTP…"); const r = await (await fetch(
   toast(r.ok?"FTP OK ✓":("FTP: "+r.error), !r.ok); }
 async function testS3(){ toast("Testing S3…"); const r = await (await fetch("/api/test/s3",{method:"POST"})).json();
   toast(r.ok?("S3 OK "+(r.links?.[0]||"")):("S3: "+r.error), !r.ok); }
+async function testEmail(){
+  toast("Sending test email…");
+  const r = await (await fetch("/api/test/email",{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({to: $("#emailTestTo").value.trim()})})).json();
+  toast(r.ok?("Test email sent to "+r.to+" ✓"):("Email: "+r.error), !r.ok);
+}
 async function refreshGdriveStatus(){
   const rd = document.getElementById("gdriveRedirect");
   if(rd) rd.value = location.origin + "/api/gdrive/oauth/callback";
@@ -720,11 +799,12 @@ async function connectGdrive(){
   toast("Sign in to Google in the new tab, then return here.");
   let n=0; const iv=setInterval(async()=>{ if(++n>40) clearInterval(iv); await refreshGdriveStatus(); }, 3000);
 }
+const thumbUrl = u => u.replace(/^\/captures\//, "/thumbs/");
 async function loadGallery(){
   const items = await (await fetch("/api/gallery")).json();
   $("#gallery").innerHTML = items.map(it=>`
     <div class="relative group">
-      <img src="${it.images[0]}" class="rounded-lg w-full h-28 object-cover">
+      <img src="${thumbUrl(it.images[0])}" loading="lazy" class="rounded-lg w-full h-28 object-cover">
       <button class="btn btn-red btn-xs absolute top-1 right-1 opacity-0 group-hover:opacity-100"
         onclick="delSession('${it.session}')">✕</button>
     </div>`).join("") || "<p class='text-slate-400 text-sm'>No photos yet.</p>";
@@ -733,8 +813,8 @@ async function delSession(s){ if(!confirm("Delete "+s+"?"))return;
   await fetch("/api/gallery/"+s,{method:"DELETE"}); loadGallery(); }
 async function loadFaceStatus(){
   try{ const j = await (await fetch("/api/faces/status")).json();
-    const dev = j.loaded ? (j.gpu ? " · 🟢 GPU" : " · 🟡 CPU") : "";
-    $("#faceStatus").textContent = "Status: " + (j.available ? "🟢 ready" : "🔴 " + j.detail)
+    const dev = j.loaded ? (j.gpu ? ` · ${dot("g")} GPU` : ` · ${dot("y")} CPU`) : "";
+    $("#faceStatus").innerHTML = "Status: " + (j.available ? dot("g")+" ready" : dot("r")+" "+j.detail)
       + dev + ` · ${j.people} people / ${j.faces} faces indexed`;
   }catch(e){}
 }
@@ -743,7 +823,7 @@ async function loadPeople(){
   if(r.status===401){ $("#gate").style.display="flex"; return; }
   const groups = await r.json();
   $("#people").innerHTML = groups.map(g=>
-    `<div class="text-center"><img src="${g.photos[0]}" class="rounded-lg w-full h-20 object-cover">
+    `<div class="text-center"><img src="${thumbUrl(g.photos[0])}" loading="lazy" class="rounded-lg w-full h-20 object-cover">
      <div class="text-xs text-slate-500">#${g.person} · ${g.count}</div></div>`).join("")
     || "<p class='text-slate-400 text-sm'>No people grouped yet.</p>";
 }
@@ -751,14 +831,14 @@ async function loadPeople(){
 /* ---- network ---- */
 async function loadNet(){
   let j; try{ j = await (await fetch("/api/network/status")).json(); }catch(e){ return; }
-  const net = {full:"🟢 online", limited:"🟡 limited", none:"🔴 offline"}[j.internet] || j.internet;
+  const net = {full:dot("g")+" online", limited:dot("y")+" limited", none:dot("r")+" offline"}[j.internet] || j.internet;
   const tile=(t,v)=>`<div class="card !mb-0"><div class="text-xs text-slate-400 mb-1">${t}</div><div class="text-sm font-semibold break-all">${v}</div></div>`;
   const active = j.hotspot && j.hotspot.active;
   $("#netStatus").innerHTML =
     tile("Internet", net) +
     tile("Connected to", j.mgmt_ssid || "—") +
     tile("Hotspot radio", j.ap_device || "— plug in USB dongle") +
-    tile("Hotspot", active ? `🟢 on · ${j.hotspot.ssid}` : "○ off");
+    tile("Hotspot", active ? `${dot("g")} on · ${j.hotspot.ssid}` : dot("")+" off");
   const t=$("#hotspotToggle");
   if(t){ t.checked = !!active;
     $("#hotspotState").textContent = active ? `Active — guests can join “${j.hotspot.ssid}”`
@@ -770,7 +850,7 @@ async function scanWifi(){
   if(r.status===401){ $("#gate").style.display="flex"; return; }
   const nets = await r.json();
   $("#wifiList").innerHTML = nets.map(n=>{
-    const lock = n.security && n.security!=="open" ? "🔒" : "";
+    const lock = n.security && n.security!=="open" ? ic("lock") : "";
     const bars = n.signal>66?"▂▄▆":n.signal>33?"▂▄ ":"▂  ";
     return `<button class="w-full flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-slate-50 text-left"
       onclick="pickWifi(this.dataset.ssid)" data-ssid="${n.ssid.replace(/"/g,'&quot;')}">
@@ -799,7 +879,7 @@ async function toggleHotspot(on){
 /* ---- sync ---- */
 async function loadSync(){
   let j; try{ j = await (await fetch("/api/sync/status")).json(); }catch(e){ return; }
-  let html = `<span class="pill">⏳ ${j.pending} pending</span> <span class="pill">✓ ${j.completed} done</span>`;
+  let html = `<span class="pill">${ic("clock")} ${j.pending} pending</span> <span class="pill">✓ ${j.completed} done</span>`;
   if(j.failing && j.failing.length){
     html += "<div class='mt-2 text-xs text-amber-600'>" +
       j.failing.map(f=>`↻ ${f.session}: ${f.error} (attempt ${f.attempts})`).join("<br>") + "</div>";
@@ -813,9 +893,9 @@ async function loadPrinters(){
   const r = await fetch("/api/print/printers");
   if(r.status===401){ $("#gate").style.display="flex"; return; }
   const j = await r.json();
-  $("#printStatus").textContent = j.available
-    ? `🟢 ready · ${j.printers.length} printer(s)` + (j.queue.length?` · ${j.queue.length} in queue`:"")
-    : "🔴 " + j.detail;
+  $("#printStatus").innerHTML = j.available
+    ? `${dot("g")} ready · ${j.printers.length} printer(s)` + (j.queue.length?` · ${j.queue.length} in queue`:"")
+    : dot("r") + " " + j.detail;
   const sel=$("#printerSel"); if(!sel) return;
   const cur = getPath(SETTINGS,"printing.printer") || "";
   sel.innerHTML = '<option value="">System default</option>' +

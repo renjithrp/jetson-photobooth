@@ -21,6 +21,7 @@ class FaceIndex:
         self.clusters: list[dict] = []     # {id, centroid:[...], count}
         self.faces: list[dict] = []        # {session, url, cluster}
         self._next = 1
+        self._cmat = None                  # cached centroid matrix (rebuilt when stale)
         self._load()
 
     def _load(self) -> None:
@@ -34,27 +35,46 @@ class FaceIndex:
                 pass
 
     def _save(self) -> None:
-        self.path.write_text(json.dumps(
+        # atomic write — a power cut mid-save must never corrupt the whole index
+        tmp = self.path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(
             {"clusters": self.clusters, "faces": self.faces, "next": self._next}))
+        tmp.replace(self.path)
+
+    def _matrix(self):
+        """(N, D) float32 matrix of cluster centroids, cached between mutations."""
+        np = _np()
+        if self._cmat is None or len(self._cmat) != len(self.clusters):
+            self._cmat = (np.asarray([c["centroid"] for c in self.clusters], dtype="float32")
+                          if self.clusters else np.zeros((0, 1), dtype="float32"))
+        return self._cmat
+
+    def _best(self, emb) -> tuple[int | None, float]:
+        """Highest-similarity cluster for an embedding (vectorized over all centroids)."""
+        np = _np()
+        m = self._matrix()
+        if not len(m):
+            return None, -1.0
+        sims = m @ np.asarray(emb, dtype="float32")
+        i = int(np.argmax(sims))
+        return self.clusters[i]["id"], float(sims[i])
 
     def _assign(self, emb, threshold: float) -> int:
         np = _np()
         v = np.asarray(emb, dtype="float32")
-        best_id, best_sim = None, -1.0
-        for c in self.clusters:
-            sim = float(np.dot(v, np.asarray(c["centroid"], dtype="float32")))
-            if sim > best_sim:
-                best_sim, best_id = sim, c["id"]
+        best_id, best_sim = self._best(v)
         if best_id is not None and best_sim >= threshold:
             c = next(x for x in self.clusters if x["id"] == best_id)
             n = c["count"]
             cen = (np.asarray(c["centroid"], dtype="float32") * n + v) / (n + 1)
             cen = cen / (float(np.linalg.norm(cen)) or 1.0)
             c["centroid"], c["count"] = cen.tolist(), n + 1
+            self._cmat = None
             return best_id
         cid = self._next
         self._next += 1
         self.clusters.append({"id": cid, "centroid": list(map(float, v)), "count": 1})
+        self._cmat = None
         return cid
 
     def add_faces(self, session: str, url: str, embeddings: list, threshold: float) -> None:
@@ -77,13 +97,7 @@ class FaceIndex:
 
     def match(self, emb, threshold: float) -> dict:
         with self._lock:
-            np = _np()
-            v = np.asarray(emb, dtype="float32")
-            best, sim = None, -1.0
-            for c in self.clusters:
-                s = float(np.dot(v, np.asarray(c["centroid"], dtype="float32")))
-                if s > sim:
-                    sim, best = s, c["id"]
+            best, sim = self._best(emb)
             if best is None or sim < threshold:
                 return {"matched": False, "similarity": round(sim, 3), "photos": []}
             urls: list[str] = []

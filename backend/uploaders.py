@@ -50,7 +50,7 @@ def _gdrive_conf(g: GDriveDestination) -> str:
     return _write_conf(ini)
 
 
-def gdrive_upload(files: list[Path], g: GDriveDestination) -> dict:
+def gdrive_upload(files: list[Path], g: GDriveDestination, subdir: str = "") -> dict:
     if not _have_rclone():
         return {"ok": False, "error": "rclone not installed"}
     # App-managed remote from the admin OAuth token. When there is no token, fall back
@@ -58,7 +58,7 @@ def gdrive_upload(files: list[Path], g: GDriveDestination) -> dict:
     if not g.token:
         return {"ok": False, "error": "Google Drive not connected — click Connect in the admin panel"}
     conf = _gdrive_conf(g)
-    dest = f"{g.rclone_remote}:{g.folder}"
+    dest = f"{g.rclone_remote}:{g.folder}" + (f"/{subdir.strip('/')}" if subdir else "")
     links: list[str] = []
     try:
         for f in files:
@@ -99,13 +99,13 @@ def _s3_public_url(c: S3Destination, key: str) -> str:
     return f"https://{c.bucket}.s3.{c.region}.amazonaws.com/{key}"
 
 
-def s3_upload(files: list[Path], c: S3Destination) -> dict:
+def s3_upload(files: list[Path], c: S3Destination, subdir: str = "") -> dict:
     if not _have_rclone():
         return {"ok": False, "error": "rclone not installed"}
     if not (c.bucket and c.access_key_id and c.secret_access_key):
         return {"ok": False, "error": "S3 not configured (need bucket, access key, secret)"}
     conf = _s3_conf(c)
-    prefix = c.prefix.strip("/")
+    prefix = "/".join(p for p in (c.prefix.strip("/"), subdir.strip("/")) if p)
     dest = f"{_S3_REMOTE}:{c.bucket}" + (f"/{prefix}" if prefix else "")
     links: list[str] = []
     try:
@@ -121,6 +121,14 @@ def s3_upload(files: list[Path], c: S3Destination) -> dict:
         return {"ok": False, "error": str(e)}
     finally:
         os.unlink(conf)
+
+
+def s3_upload_one(f: Path, c: S3Destination, subdir: str = "") -> dict:
+    """Upload a single file and return its public URL (for guest share links)."""
+    res = s3_upload([f], c, subdir=subdir)
+    if res.get("ok"):
+        res["link"] = (res.get("links") or [None])[0]
+    return res
 
 
 # ---- FTP / FTPS -----------------------------------------------------------
@@ -155,13 +163,14 @@ def enabled_dests(settings: Settings) -> list[str]:
                             ("ftp", st.ftp.enabled)) if on]
 
 
-def dispatch(dest: str, files: list[Path], settings: Settings) -> dict:
-    """Run one destination's upload. Single source of truth for the dest -> fn mapping."""
+def dispatch(dest: str, files: list[Path], settings: Settings, subdir: str = "") -> dict:
+    """Run one destination's upload. Single source of truth for the dest -> fn mapping.
+    `subdir` (the session id) keeps remote names collision-free across sessions."""
     st = settings.storage
     if dest == "gdrive":
-        return gdrive_upload(files, st.gdrive)
+        return gdrive_upload(files, st.gdrive, subdir=subdir)
     if dest == "s3":
-        return s3_upload(files, st.s3)
+        return s3_upload(files, st.s3, subdir=subdir)
     if dest == "ftp":
         return ftp_upload(files, st.ftp)
     return {"ok": False, "error": f"unknown destination '{dest}'"}

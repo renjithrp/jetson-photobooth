@@ -202,9 +202,24 @@ class NetworkSettings(BaseModel):
     hotspot_hidden: bool = False
 
 
+class EmailSettings(BaseModel):
+    """Send selected photos to a guest's email as attachments via SMTP.
+    Works with any SMTP provider (Gmail app password, Outlook, Brevo, ...)."""
+    enabled: bool = False
+    smtp_host: str = ""                   # e.g. smtp.gmail.com
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""               # secret, masked by the API
+    use_tls: bool = True                  # STARTTLS (port 587); off = SSL when port 465
+    from_addr: str = ""                   # blank = smtp_user
+    subject: str = "Your photos from {booth_name}"
+    max_attach_mb: int = 20               # resize/limit attachments to fit this total
+
+
 class ShareSettings(BaseModel):
     qr_enabled: bool = True
     base_url: str = ""                    # override public URL; blank = auto-detect
+    email: EmailSettings = EmailSettings()
 
 
 class FacesSettings(BaseModel):

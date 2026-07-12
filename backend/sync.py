@@ -137,7 +137,7 @@ class SyncWorker:
                     j["done"].append(dest)
                     changed = True
                     continue
-                res = uploaders.dispatch(dest, files, s)
+                res = uploaders.dispatch(dest, files, s, subdir=j["session"])
                 if res.get("ok"):
                     j["done"].append(dest)
                     j["last_error"] = ""

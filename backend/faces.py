@@ -62,13 +62,33 @@ def active_providers() -> list[str]:
 
 
 def warmup(settings: Settings) -> None:
-    """Load the face model at startup so the first guest doesn't wait for a cold init."""
-    if not settings.faces.enabled or settings.faces.engine == "off":
+    """Load the face model at startup so the first guest doesn't wait for a cold init.
+
+    When GPU is requested but onnxruntime silently fell back to CPU (e.g. CUDA wasn't
+    ready yet at boot), retry a few times — the CPU-fallback app keeps serving requests
+    between attempts, and a successful retry swaps the cache entry to the GPU app."""
+    import time
+
+    f = settings.faces
+    if not f.enabled or f.engine == "off":
         return
-    try:
-        _get_app(settings.faces.model_pack, settings.faces.det_size, settings.faces.use_gpu)
-    except Exception as e:
-        log.warning("face warmup skipped: %s", e)
+    key = (f.model_pack, f.det_size, f.use_gpu)
+    for attempt in range(4):
+        if attempt:
+            time.sleep(20)
+        try:
+            _app, provs = _get_app(*key)
+        except Exception as e:
+            log.warning("face warmup attempt %d failed: %s", attempt + 1, e)
+            continue
+        if not f.use_gpu or any("CUDA" in p or "Tensorrt" in p for p in provs):
+            return                              # loaded as requested
+        if attempt == 3:
+            break                               # keep the CPU app cached — don't force a cold reload
+        log.warning("face model on CPU despite use_gpu=True (attempt %d) — will retry",
+                    attempt + 1)
+        _APP_CACHE.pop(key, None)               # evict the CPU fallback and try again
+    log.warning("face model staying on CPU — GPU init kept failing (check dmesg | grep nvgpu)")
 
 
 class FaceEngine:

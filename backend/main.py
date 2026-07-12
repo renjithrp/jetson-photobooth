@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import copy
+import functools
 import io
 import json
 import logging
@@ -12,6 +13,7 @@ import os
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import datetime
 import secrets
@@ -22,12 +24,14 @@ from pathlib import Path
 
 import qrcode
 
-from fastapi import (Depends, FastAPI, File, HTTPException, Request, Response,
+from fastapi import (Depends, FastAPI, File, HTTPException, Query, Request, Response,
                      UploadFile, WebSocket, WebSocketDisconnect)
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 
-from . import auth, config, face_index, faces, gestures, liveview, printing, uploaders, wifi
+from . import (auth, config, face_index, faces, gestures, liveview, printing, share,
+               uploaders, wifi)
 from .sync import worker as sync_worker
 from .auth import require_auth
 from .faces import make_face_engine
@@ -69,8 +73,10 @@ def guest_base_url() -> str:
     return (config.load().share.base_url or base_url()).rstrip("/")
 
 
+@functools.lru_cache(maxsize=32)
 def _qr_data_uri(text: str) -> str:
-    """Render `text` as a QR PNG and return it as a data: URI (for inline <img>)."""
+    """Render `text` as a QR PNG and return it as a data: URI (for inline <img>).
+    Cached — the kiosk polls /api/wifi/info every 30s and the QR text rarely changes."""
     buf = io.BytesIO()
     qrcode.make(text).save(buf, format="PNG")
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
@@ -186,7 +192,7 @@ def _mask_secrets(data: dict) -> dict:
     except Exception:
         pass
     for path in (["storage", "gdrive", "client_secret"], ["storage", "gdrive", "token"],
-                 ["storage", "s3", "secret_access_key"]):
+                 ["storage", "s3", "secret_access_key"], ["share", "email", "smtp_password"]):
         try:
             node = d
             for k in path[:-1]:
@@ -242,14 +248,19 @@ async def share_page(session: str) -> HTMLResponse:
     imgs = sorted(p.name for p in sess.iterdir()
                   if p.suffix.lower() in (".jpg", ".jpeg", ".png") and p.name != "qr.png")
     items = "".join(
-        f'<a href="/captures/{safe}/{n}" download><img src="/captures/{safe}/{n}"></a>'
+        f'<a href="/captures/{safe}/{n}" download><img src="/thumbs/{safe}/{n}" loading="lazy"></a>'
         for n in imgs)
+    zip_qs = "&".join("p=" + urllib.parse.quote(f"/captures/{safe}/{n}") for n in imgs)
     html = f"""<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
 <title>Your Photos</title>
 <style>body{{font-family:system-ui;background:#111;color:#eee;text-align:center;margin:0;padding:16px}}
 img{{max-width:100%;border-radius:12px;margin:8px 0;box-shadow:0 6px 24px #0008}}
-h1{{font-weight:600}} a{{display:block}}</style>
-<h1>📸 Your Photos</h1><p>Tap an image to download.</p>{items}"""
+h1{{font-weight:600}} a{{display:block}}
+.dl{{display:inline-block;background:#0d9488;color:#fff;text-decoration:none;font-weight:600;
+padding:12px 22px;border-radius:12px;margin:6px 0 14px}}</style>
+<h1>Your Photos</h1>
+<a class="dl" href="/api/download?{zip_qs}">Download all ({len(imgs)})</a>
+<p>Or tap an image to download it alone.</p>{items}"""
     return HTMLResponse(html)
 
 
@@ -304,6 +315,7 @@ async def put_settings(partial: dict, _: None = Depends(require_auth)) -> dict:
     _strip_blank_secret(partial, ["storage", "gdrive", "client_secret"])
     _strip_blank_secret(partial, ["storage", "gdrive", "token"])
     _strip_blank_secret(partial, ["storage", "s3", "secret_access_key"])
+    _strip_blank_secret(partial, ["share", "email", "smtp_password"])
     _strip_blank_secret(partial, ["network", "hotspot_password"])
     old = config.load()
     try:
@@ -406,16 +418,124 @@ async def faces_find(selfie: UploadFile = File(...)) -> dict:
     ok, detail = eng.available()
     if not ok:
         return {"matched": False, "error": detail}
-    tmp = config.data_dir() / "_find_selfie.jpg"
-    tmp.write_bytes(await selfie.read())
+    # unique temp file — concurrent guests must not overwrite each other's selfie
+    fd, name = tempfile.mkstemp(dir=str(config.data_dir()), prefix="_find_", suffix=".jpg")
+    tmp = Path(name)
     loop = asyncio.get_running_loop()
     try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(await selfie.read())
         embs = await loop.run_in_executor(None, lambda: eng.embed_image(tmp))
     finally:
         tmp.unlink(missing_ok=True)
     if not embs:
         return {"matched": False, "error": "no face detected — try again"}
     return face_index.index.match(embs[0], s.faces.match_threshold)
+
+
+# ---- guest sharing (thumbnails / zip download / email / links) -------------
+@app.get("/thumbs/{rest:path}")
+async def thumb(rest: str) -> FileResponse:
+    """Small cached thumbnail for a capture — keeps guest grids fast on hotspot Wi-Fi."""
+    loop = asyncio.get_running_loop()
+    p = await loop.run_in_executor(None, lambda: share.thumb_for(f"/captures/{rest}"))
+    if p is None:
+        raise HTTPException(404, "not found")
+    return FileResponse(p, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/api/download")
+async def download_zip(p: list[str] = Query([])) -> FileResponse:
+    """Single-click download of the selected photos as one ZIP."""
+    files = share.resolve_photos(p)
+    if not files:
+        raise HTTPException(404, "no valid photos selected")
+    loop = asyncio.get_running_loop()
+    zpath = await loop.run_in_executor(None, lambda: share.build_zip(files))
+    name = "photos_" + datetime.datetime.now().strftime("%Y%m%d_%H%M") + ".zip"
+    return FileResponse(zpath, media_type="application/zip", filename=name,
+                        background=BackgroundTask(zpath.unlink, missing_ok=True))
+
+
+@app.get("/api/share/options")
+async def share_options() -> dict:
+    """What the guest page can offer: email sending and/or public links (WhatsApp)."""
+    s = config.load()
+    st = s.storage
+    e = s.share.email
+    return {
+        "email": bool(e.enabled and e.smtp_host and e.smtp_user),
+        "links": bool((st.s3.enabled and st.s3.bucket and st.s3.access_key_id)
+                      or (st.gdrive.enabled and st.gdrive.token)),
+    }
+
+
+_email_last: dict[str, float] = {}      # client ip -> last send ts (light rate limit)
+
+
+@app.post("/api/share/email")
+async def share_email(body: dict, request: Request) -> dict:
+    ip = request.client.host if request.client else "?"
+    if time.time() - _email_last.get(ip, 0) < 15:
+        return {"ok": False, "error": "please wait a moment before sending again"}
+    files = share.resolve_photos(list(body.get("photos") or []))
+    if not files:
+        return {"ok": False, "error": "no photos selected"}
+    s = config.load()
+    loop = asyncio.get_running_loop()
+    res = await loop.run_in_executor(
+        None, lambda: share.send_email(str(body.get("to", "")).strip(), files, s))
+    if res.get("ok"):
+        _email_last[ip] = time.time()
+    return res
+
+
+@app.post("/api/share/links")
+async def share_links(body: dict) -> dict:
+    """Public cloud URLs for the selected photos (guest pastes/sends them in WhatsApp)."""
+    files = share.resolve_photos(list(body.get("photos") or []))
+    if not files:
+        return {"ok": False, "error": "no photos selected"}
+    s = config.load()
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: share.public_links(files, s))
+
+
+@app.post("/api/test/email")
+async def test_email(body: dict, _: None = Depends(require_auth)) -> dict:
+    """Admin: send a test email (no attachments) to verify the SMTP settings."""
+    s = config.load()
+    e = s.share.email
+    to = str(body.get("to", "")).strip() or e.smtp_user
+    if not share.valid_email(to):
+        return {"ok": False, "error": "enter a destination email address"}
+    if not (e.smtp_host and e.smtp_user and e.smtp_password):
+        return {"ok": False, "error": "email is not configured (SMTP host/user/password)"}
+    import smtplib
+    from email.message import EmailMessage
+    msg = EmailMessage()
+    msg["Subject"] = f"{s.general.booth_name} — test email"
+    msg["From"] = e.from_addr or e.smtp_user
+    msg["To"] = to
+    msg.set_content("SMTP settings work — the booth can email photos to guests.")
+
+    def _send():
+        try:
+            if e.use_tls:
+                with smtplib.SMTP(e.smtp_host, e.smtp_port, timeout=30) as c:
+                    c.starttls()
+                    c.login(e.smtp_user, e.smtp_password)
+                    c.send_message(msg)
+            else:
+                with smtplib.SMTP_SSL(e.smtp_host, e.smtp_port, timeout=30) as c:
+                    c.login(e.smtp_user, e.smtp_password)
+                    c.send_message(msg)
+            return {"ok": True, "to": to}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _send)
 
 
 # ---- gallery --------------------------------------------------------------
@@ -486,12 +606,16 @@ _gdrive_states: dict[str, dict] = {}   # state -> {redirect_uri, ts}
 
 def _gdrive_result_page(ok: bool, msg: str) -> str:
     color = "#16a34a" if ok else "#dc2626"
-    icon = "✅" if ok else "⚠️"
+    icon = (f"<svg width='56' height='56' viewBox='0 0 24 24' fill='none' stroke='{color}' "
+            f"stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>"
+            + ("<circle cx='12' cy='12' r='10'/><path d='m9 12 2 2 4-4'/>" if ok else
+               "<circle cx='12' cy='12' r='10'/><line x1='12' y1='8' x2='12' y2='12'/>"
+               "<line x1='12' y1='16' x2='12.01' y2='16'/>") + "</svg>")
     return (f"<!doctype html><meta charset=utf-8><title>Google Drive</title>"
             f"<body style='font-family:system-ui;background:#0f172a;color:#e2e8f0;"
             f"display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>"
             f"<div style='text-align:center;max-width:32rem;padding:2rem'>"
-            f"<div style='font-size:3rem'>{icon}</div>"
+            f"<div>{icon}</div>"
             f"<h2 style='color:{color}'>{'Google Drive connected' if ok else 'Connection failed'}</h2>"
             f"<p style='opacity:.8'>{msg}</p>"
             f"<p style='opacity:.6'>You can close this tab and return to the admin panel.</p>"

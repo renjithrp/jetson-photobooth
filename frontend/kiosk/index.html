@@ -44,7 +44,7 @@
   .join-cap { font-size:1.3vw; font-weight:700; line-height:1.25; text-align:center;
               text-shadow:0 2px 8px #000c; }
   .join-cap span { font-weight:600; opacity:.85; font-size:1.1vw; }
-  #joincorner.hidden { display:none; }
+  #joincorner.hidden, #findcard.hidden { display:none; }
   #ipbadge { position:fixed; left:14px; bottom:12px; font-size:1.1vw; opacity:.7;
     background:#0007; padding:6px 12px; border-radius:999px; }
   #cambadge { position:fixed; right:14px; top:12px; font-size:1.2vw; font-weight:700;
@@ -57,20 +57,26 @@
   #facezone span { margin-top:-2.6rem; background:rgba(13,148,136,.92); color:#fff;
     font-weight:700; padding:.3rem 1rem; border-radius:999px; font-size:1.4rem; }
   #facezone.hidden { display:none; }
+  svg.ic { width:1em; height:1em; stroke:currentColor; fill:none; stroke-width:2;
+    stroke-linecap:round; stroke-linejoin:round; vertical-align:-.12em; }
 </style>
 </head>
 <body>
   <img id="preview" alt="">
-  <div id="facezone" class="hidden"><span>Stand here 🙂</span></div>
+  <div id="facezone" class="hidden"><span>Stand here <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></span></div>
   <div class="flash" id="flash"></div>
 
   <div class="layer scrim-bottom" id="attract">
-    <div class="title">📸 <span id="boothName">AI Photo Booth</span></div>
+    <div class="title"><svg class="ic" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg> <span id="boothName">AI Photo Booth</span></div>
     <div class="sub" id="welcome">Show your hand ✋ to start!</div>
     <div class="join-corner hidden" id="joincorner">
       <div class="join-card">
         <div class="qr"><img id="joinqr" alt="Join Wi-Fi QR"></div>
-        <div class="join-cap">Scan to join &amp; get your photos<br><span id="joinssid"></span></div>
+        <div class="join-cap">1. Scan to join Wi-Fi<br><span id="joinssid"></span></div>
+      </div>
+      <div class="join-card hidden" id="findcard">
+        <div class="qr"><img id="findqr" alt="Find your photos QR"></div>
+        <div class="join-cap">2. Scan to get<br>your photos</div>
       </div>
     </div>
   </div>
@@ -81,7 +87,7 @@
 
   <div class="layer hidden" id="countdown"><div class="big" id="count">3</div></div>
 
-  <div class="layer scrim-bottom hidden" id="capturing"><div class="title">Smile! 😄</div>
+  <div class="layer scrim-bottom hidden" id="capturing"><div class="title">Smile! <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></div>
     <div class="sub" id="shotinfo"></div></div>
 
   <div class="layer scrim hidden" id="processing">
@@ -95,11 +101,11 @@
     </div>
   </div>
 
-  <div class="layer scrim hidden" id="error"><div class="title">😕 Oops</div>
+  <div class="layer scrim hidden" id="error"><div class="title"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Oops</div>
     <div class="sub" id="errmsg"></div></div>
 
   <div id="ipbadge">admin: loading…</div>
-  <div id="cambadge">📷 Camera reconnecting…</div>
+  <div id="cambadge"><svg class="ic" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg> Camera reconnecting…</div>
 
 <script>
 const L = id => document.getElementById(id);
@@ -204,6 +210,10 @@ async function loadWifi(){
     if (w.active && w.join_qr){
       L("joinqr").src = w.join_qr;
       L("joinssid").textContent = w.ssid || "";
+      // Second QR: opens the find-your-photos page. Needed in pass-through mode,
+      // where joining the hotspot does NOT auto-open a captive portal page.
+      if (w.find_qr){ L("findqr").src = w.find_qr; L("findcard").classList.remove("hidden"); }
+      else { L("findcard").classList.add("hidden"); }
       L("joincorner").classList.remove("hidden");
     } else {
       L("joincorner").classList.add("hidden");

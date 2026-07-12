@@ -5,19 +5,24 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Find Your Photos</title>
 <style>
-  :root { --bg:#0d0f14; --card:#171a21; --fg:#f1f3f7; --mut:#9aa3b2; --accent:#5b8cff; }
+  :root { --bg:#0d0f14; --card:#171a21; --fg:#f1f3f7; --mut:#9aa3b2; --accent:#5b8cff;
+          --ok:#34d399; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   body { font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-         background:var(--bg); color:var(--fg); margin:0; padding:20px 16px 40px;
+         background:var(--bg); color:var(--fg); margin:0; padding:20px 16px 120px;
          min-height:100vh; text-align:center; }
-  h1 { font-weight:700; font-size:1.6rem; margin:8px 0 4px; }
+  h1 { font-weight:700; font-size:1.6rem; margin:8px 0 4px; display:flex;
+       align-items:center; justify-content:center; gap:10px; }
   p.sub { color:var(--mut); margin:0 0 22px; font-size:.95rem; }
+  svg.ic { width:1.15em; height:1.15em; stroke:currentColor; fill:none; stroke-width:2;
+           stroke-linecap:round; stroke-linejoin:round; vertical-align:-.18em; flex:none; }
   .btn { display:inline-flex; align-items:center; justify-content:center; gap:10px;
          background:var(--accent); color:#fff; border:none; border-radius:14px;
-         font-size:1.1rem; font-weight:600; padding:16px 24px; cursor:pointer;
+         font-size:1.05rem; font-weight:600; padding:15px 22px; cursor:pointer;
          box-shadow:0 8px 24px #5b8cff44; width:100%; max-width:380px; }
   .btn:active { transform:scale(.98); }
-  .btn.secondary { background:#262b36; box-shadow:none; margin-top:12px; }
+  .btn.secondary { background:#262b36; box-shadow:none; }
+  .btn:disabled { opacity:.5; }
   .hint { color:var(--mut); margin:18px auto 0; max-width:380px; min-height:1.4em;
           font-size:.95rem; }
   .hint.err { color:#ff8a8a; }
@@ -25,39 +30,86 @@
              border-radius:50%; animation:spin .8s linear infinite; display:inline-block;
              vertical-align:-3px; }
   @keyframes spin { to { transform:rotate(360deg); } }
-  .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px;
-          max-width:600px; margin:24px auto 0; }
-  .grid a { display:block; position:relative; }
+  .count { margin:22px 0 4px; font-weight:600; }
+  .selhint { color:var(--mut); font-size:.85rem; margin:0 0 4px; }
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
+          max-width:600px; margin:14px auto 0; }
+  .grid .ph { position:relative; cursor:pointer; }
   .grid img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:12px;
-              box-shadow:0 6px 20px #0008; }
-  .grid a::after { content:"⬇ Save"; position:absolute; left:8px; bottom:8px;
-                   background:#000a; color:#fff; font-size:.75rem; font-weight:600;
-                   padding:4px 8px; border-radius:8px; }
-  .count { margin:22px 0 0; font-weight:600; }
+              box-shadow:0 6px 20px #0008; display:block; }
+  .ph .tick { position:absolute; top:6px; right:6px; width:26px; height:26px;
+              border-radius:50%; background:#0009; border:2px solid #fff9;
+              display:flex; align-items:center; justify-content:center; transition:.12s; }
+  .ph .tick svg { width:15px; height:15px; opacity:0; }
+  .ph.sel img { outline:3px solid var(--accent); outline-offset:-3px; }
+  .ph.sel .tick { background:var(--accent); border-color:var(--accent); }
+  .ph.sel .tick svg { opacity:1; }
+  /* sticky action bar */
+  #bar { position:fixed; left:0; right:0; bottom:0; padding:10px 14px
+         calc(10px + env(safe-area-inset-bottom)); background:#12151cee;
+         backdrop-filter:blur(10px); border-top:1px solid #ffffff14; display:none; }
+  #bar.show { display:block; }
+  #bar .row { display:flex; gap:8px; max-width:600px; margin:0 auto; }
+  #bar .btn { flex:1; width:auto; max-width:none; padding:13px 10px; font-size:.95rem;
+              border-radius:12px; }
+  /* email dialog */
+  #emailBox { display:none; max-width:600px; margin:8px auto 0; gap:8px; }
+  #emailBox.show { display:flex; }
+  #emailBox input { flex:1; border:1px solid #ffffff22; background:#0d0f14; color:var(--fg);
+                    border-radius:12px; padding:12px 14px; font-size:1rem; min-width:0; }
+  #emailBox .btn { flex:none; width:auto; max-width:none; padding:12px 18px; }
   footer { color:var(--mut); font-size:.8rem; margin-top:34px; }
 </style>
 </head>
 <body>
-  <h1>📸 Find your photos</h1>
+  <h1><svg class="ic" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+      Find your photos</h1>
   <p class="sub">Take a quick selfie and we'll find every photo you're in.</p>
 
-  <button class="btn" id="findBtn">📷 Take a selfie</button>
+  <button class="btn" id="findBtn">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+    Take a selfie</button>
   <input type="file" accept="image/*" capture="user" id="selfie" style="display:none">
 
   <div class="hint" id="hint"></div>
 
   <div class="count" id="count" style="display:none"></div>
+  <div class="selhint" id="selhint" style="display:none">Tap photos to select — then download or share below.</div>
   <div class="grid" id="grid"></div>
 
-  <footer>Tap any photo to save it to your phone.</footer>
+  <footer id="foot">Your photos download as one file. On iPhone they land in Files; open the ZIP to save to Photos.</footer>
+
+  <!-- sticky actions -->
+  <div id="bar">
+    <div id="emailBox">
+      <input type="email" id="emailTo" placeholder="your@email.com" autocomplete="email">
+      <button class="btn" id="emailSend">Send</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="dlBtn">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span id="dlLbl">Download</span></button>
+      <button class="btn secondary" id="waBtn" style="display:none">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/><path d="M8.5 9.5c.5 2.5 3.5 5.5 6 6l1.5-1.5 2 1c-.5 1.5-1.5 2-3 2-4 0-8-4-8-8 0-1.5.5-2.5 2-3l1 2z"/></svg>
+        WhatsApp</button>
+      <button class="btn secondary" id="emBtn" style="display:none">
+        <svg class="ic" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>
+        Email</button>
+    </div>
+  </div>
 
 <script>
 const L = id => document.getElementById(id);
+let PHOTOS = [];                 // matched photo URLs (/captures/...)
+let SEL = new Set();             // selected URLs
+let OPTS = { email:false, links:false };
+
 function hint(msg, busy, err) {
   const h = L("hint");
   h.className = "hint" + (err ? " err" : "");
   h.innerHTML = busy ? `<span class="spinner"></span> ${msg}` : (msg || "");
 }
+const thumb = u => u.replace(/^\/captures\//, "/thumbs/");
 
 // Hide the feature gracefully if face-grouping isn't available on this booth.
 (async () => {
@@ -68,6 +120,7 @@ function hint(msg, busy, err) {
       hint("Find-your-photos isn't enabled on this booth — please ask staff.");
     }
   } catch (e) {}
+  try { OPTS = await (await fetch("/api/share/options")).json(); } catch (e) {}
 })();
 
 L("findBtn").onclick = () => L("selfie").click();
@@ -78,17 +131,14 @@ L("selfie").onchange = async () => {
   hint("Finding your photos…", true);
   L("count").style.display = "none";
   L("grid").innerHTML = "";
+  L("bar").classList.remove("show");
   const fd = new FormData();
   fd.append("selfie", f);
   try {
     const r = await (await fetch("/api/faces/find", { method: "POST", body: fd })).json();
     if (r.matched && r.photos && r.photos.length) {
       hint("");
-      L("count").textContent = `Found ${r.photos.length} photo${r.photos.length > 1 ? "s" : ""} of you 🎉`;
-      L("count").style.display = "block";
-      L("grid").innerHTML = r.photos
-        .map(u => `<a href="${u}" download><img src="${u}" loading="lazy"></a>`)
-        .join("");
+      showResults(r.photos);
     } else {
       hint(r.error || "No match yet — try a clearer, well-lit selfie.", false, true);
     }
@@ -96,6 +146,118 @@ L("selfie").onchange = async () => {
     hint("Something went wrong — please try again.", false, true);
   }
   L("selfie").value = "";
+};
+
+function showResults(photos) {
+  PHOTOS = photos;
+  SEL = new Set(photos);                       // everything selected by default
+  L("count").textContent = `Found ${photos.length} photo${photos.length > 1 ? "s" : ""} of you`;
+  L("count").style.display = "block";
+  L("selhint").style.display = "block";
+  L("grid").innerHTML = photos.map((u, i) => `
+    <div class="ph sel" data-u="${u}">
+      <img src="${thumb(u)}" loading="lazy" alt="photo ${i + 1}">
+      <div class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5"
+        stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+    </div>`).join("");
+  L("waBtn").style.display = (OPTS.links || (navigator.share && window.isSecureContext)) ? "" : "none";
+  L("emBtn").style.display = OPTS.email ? "" : "none";
+  L("bar").classList.add("show");
+  syncBar();
+}
+
+L("grid").addEventListener("click", e => {
+  const ph = e.target.closest(".ph");
+  if (!ph) return;
+  const u = ph.dataset.u;
+  if (SEL.has(u)) { SEL.delete(u); ph.classList.remove("sel"); }
+  else { SEL.add(u); ph.classList.add("sel"); }
+  syncBar();
+});
+
+function syncBar() {
+  const n = SEL.size;
+  L("dlLbl").textContent = n ? `Download (${n})` : "Download";
+  L("dlBtn").disabled = !n;
+  L("waBtn").disabled = !n;
+  L("emBtn").disabled = !n;
+}
+const selected = () => PHOTOS.filter(u => SEL.has(u));   // keep photo order
+
+/* ---- one-click download: selected photos as a single ZIP ---- */
+L("dlBtn").onclick = () => {
+  const sel = selected();
+  if (!sel.length) return;
+  if (sel.length === 1) {                       // single photo: direct download
+    const a = document.createElement("a");
+    a.href = sel[0]; a.download = "";
+    document.body.appendChild(a); a.click(); a.remove();
+    return;
+  }
+  location.href = "/api/download?" + sel.map(u => "p=" + encodeURIComponent(u)).join("&");
+};
+
+/* ---- WhatsApp / native share ---- */
+L("waBtn").onclick = async () => {
+  const sel = selected();
+  if (!sel.length) return;
+  // Best path: native share sheet with the actual images (needs HTTPS/secure context).
+  if (navigator.share && window.isSecureContext) {
+    try {
+      hint("Preparing photos…", true);
+      const files = await Promise.all(sel.slice(0, 10).map(async (u, i) => {
+        const b = await (await fetch(u)).blob();
+        return new File([b], `photo_${i + 1}.jpg`, { type: "image/jpeg" });
+      }));
+      if (navigator.canShare && navigator.canShare({ files })) {
+        await navigator.share({ files });
+        hint("");
+        return;
+      }
+    } catch (e) { /* cancelled or unsupported — fall through to links */ }
+    hint("");
+  }
+  if (!OPTS.links) { hint("Sharing isn't available on this booth.", false, true); return; }
+  // Fallback: get public cloud links and hand them to WhatsApp as a message.
+  hint("Getting share links…", true);
+  try {
+    const r = await (await fetch("/api/share/links", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photos: sel }) })).json();
+    if (r.ok && r.links && r.links.length) {
+      hint("");
+      const text = "My photos:\n" + r.links.join("\n");
+      window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank");
+    } else {
+      hint(r.error || "Couldn't create share links.", false, true);
+    }
+  } catch (e) { hint("Couldn't create share links.", false, true); }
+};
+
+/* ---- email ---- */
+L("emBtn").onclick = () => {
+  L("emailBox").classList.toggle("show");
+  if (L("emailBox").classList.contains("show")) L("emailTo").focus();
+};
+L("emailSend").onclick = async () => {
+  const to = L("emailTo").value.trim();
+  const sel = selected();
+  if (!/^\S+@\S+\.\S+$/.test(to)) { hint("Enter a valid email address.", false, true); return; }
+  if (!sel.length) return;
+  L("emailSend").disabled = true;
+  hint("Sending email…", true);
+  try {
+    const r = await (await fetch("/api/share/email", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to, photos: sel }) })).json();
+    if (r.ok) {
+      hint(`Sent ${r.sent} photo${r.sent > 1 ? "s" : ""} to ${to}`);
+      L("emailBox").classList.remove("show");
+    } else {
+      hint(r.error || "Sending failed.", false, true);
+    }
+  } catch (e) { hint("Sending failed.", false, true); }
+  L("emailSend").disabled = false;
 };
 </script>
 </body>
