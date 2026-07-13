@@ -90,11 +90,12 @@ class GestureWorker:
         self.base = _detect_backend()
         self.trigger = _load_trigger() or SimpleNamespace()
         self._settings_read = 0.0
-        # Lower detection/tracking confidence so a small, far-away hand in the
-        # low-res (1024x680) live view still gets found (was 0.8/0.6). The hold
-        # time + gesture-match + cooldown filter out the extra weak detections.
+        # 0.6/0.5 balances the two failure modes seen at the booth: 0.8/0.6 missed
+        # small far-away hands in the low-res (1024x680) live view, while 0.5/0.5
+        # fired on half-visible palms. The hold time + strict gesture-match +
+        # cooldown filter the remaining weak detections.
         self._hands = mp.solutions.hands.Hands(
-            max_num_hands=1, min_detection_confidence=0.5, min_tracking_confidence=0.5)
+            max_num_hands=1, min_detection_confidence=0.6, min_tracking_confidence=0.5)
         self._face = None  # lazily created when require_face is on
         self._hold_start: float | None = None
         self._last_detected = 0.0
@@ -189,7 +190,13 @@ class GestureWorker:
                 except Exception:
                     score = 0.0
             gtype = getattr(t, "gesture_type", "open_palm")
-            gesture_ok = bool(hands_lm) and score >= 0.5 and \
+            # NOTE: `score` is the left/right HANDEDNESS confidence (>=0.5 by
+            # construction whenever a hand is found) — logged for debugging but
+            # not gated on; detection confidence is enforced by the Hands()
+            # min_detection_confidence instead.
+            in_frame = bool(hands_lm) and \
+                gestures.hand_fully_in_frame(hands_lm[0].landmark)
+            gesture_ok = in_frame and \
                 gestures.gesture_matches(gtype, hands_lm[0].landmark)
             detected = gesture_ok
 
@@ -209,7 +216,8 @@ class GestureWorker:
                 extra = (" | " + gestures.thumb_debug(hands_lm[0].landmark)
                          ) if gtype == "thumbs_up" else ""
                 _log(f"hand: want={gtype} match={gesture_ok} score={score:.2f} "
-                     f"on_face={on_face} in_zone={face_ok} -> fire={detected}{extra}")
+                     f"in_frame={in_frame} on_face={on_face} in_zone={face_ok} "
+                     f"-> fire={detected}{extra}")
 
             hold = float(getattr(t, "gesture_hold_seconds", 1.5))
             cooldown = float(getattr(t, "cooldown_seconds", 5.0))

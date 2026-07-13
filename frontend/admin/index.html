@@ -21,6 +21,11 @@
   .card h2{ font-size:1rem; font-weight:700; color:#0f172a; margin-bottom:.15rem;
     display:flex; align-items:center; gap:.5rem; }
   .card .sub{ font-size:.8rem; color:#94a3b8; margin-bottom:.9rem; }
+  .card .sub a, details.guide a{ color:var(--teal2); font-weight:600; text-decoration:underline; }
+  details.guide{ font-size:.8rem; color:#64748b; margin:-.4rem 0 .9rem; }
+  details.guide summary{ cursor:pointer; color:var(--teal2); font-weight:600; user-select:none; }
+  details.guide ol{ list-style:decimal; margin:.45rem 0 0 1.25rem; }
+  details.guide li{ margin:.25rem 0; }
   .grid2{ display:grid; grid-template-columns:1fr; gap:.85rem; }
   @media(min-width:560px){ .grid2{ grid-template-columns:1fr 1fr; } }
   .grid4{ display:grid; grid-template-columns:1fr 1fr; gap:.6rem; }
@@ -304,7 +309,18 @@
       <button class="btn btn-ghost btn-xs ml-auto" onclick="testGdrive()">Test</button></h2>
       <p class="sub">One-time setup: in Google Cloud Console create an OAuth <b>Web application</b>
         client, add the redirect URI below to it, then paste the Client ID + Secret here, <b>Save</b>,
-        and click <b>Connect</b>.</p>
+        and click <b>Connect</b>.
+        <a href="https://support.google.com/cloud/answer/6158849" target="_blank" rel="noopener">Google's guide: create a Client ID &amp; Secret →</a></p>
+      <details class="guide"><summary>Step-by-step: get a Client ID &amp; Secret</summary>
+        <ol>
+          <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console → Credentials</a> (create a project if asked).</li>
+          <li>Enable the <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">Google Drive API</a> for that project.</li>
+          <li>On <b>OAuth consent screen</b>: choose <b>External</b> and add your own Google account under <b>Test users</b>.</li>
+          <li><b>Create Credentials → OAuth client ID</b> → application type <b>Web application</b>.</li>
+          <li>Under <b>Authorized redirect URIs</b> add the exact URI shown below (re-add it if the booth's IP ever changes).</li>
+          <li>Copy the Client ID + Secret into the fields here → <b>Save</b> → <b>Connect Google Drive</b>. Google will show an "unverified app" warning because your client hasn't been through review — <b>first check the app name on the consent screen is the one you just created</b>, then continue via "Advanced". Never do this for a consent screen you didn't initiate from this page.</li>
+        </ol>
+      </details>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Upload to Google Drive</div>
         <label class="sw"><input type="checkbox" data-path="storage.gdrive.enabled"><i></i></label></div>
       <div class="grid2 mt-2">
@@ -326,7 +342,17 @@
     </div>
     <div class="card"><h2><svg class="ic"><use href="#i-db"/></svg> Amazon S3
       <button class="btn btn-ghost btn-xs ml-auto" onclick="testS3()">Test</button></h2>
-      <p class="sub">Amazon S3 or any S3-compatible store (Wasabi, Backblaze B2, Cloudflare R2, MinIO).</p>
+      <p class="sub">Amazon S3 or any S3-compatible store (Wasabi, Backblaze B2, Cloudflare R2, MinIO).
+        <a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html" target="_blank" rel="noopener">AWS guide: create access keys →</a></p>
+      <details class="guide"><summary>Step-by-step: get an Access key ID &amp; Secret (AWS)</summary>
+        <ol>
+          <li><a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/create-bucket-overview.html" target="_blank" rel="noopener">Create an S3 bucket</a> (note its name and region for the fields above).</li>
+          <li>In <a href="https://console.aws.amazon.com/iam/home#/users" target="_blank" rel="noopener">IAM → Users</a>, create a user just for the booth (no console access) and attach a policy limited to <b>this bucket only</b> (<a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_examples_s3_rw-bucket.html" target="_blank" rel="noopener">example policy</a>). Don't grant account-wide S3 access — this key is stored on the booth, so scoping it limits the damage if the booth is ever compromised.</li>
+          <li>Open the user → <b>Security credentials → Create access key</b> (use case: "Application running outside AWS").</li>
+          <li>Copy the <b>Access key ID</b> and <b>Secret access key</b> into the fields here — the secret is shown only once — then <b>Save</b> and <b>Test</b>.</li>
+        </ol>
+        <p class="mt-1">Wasabi / B2 / R2 / MinIO: create keys in that provider's console instead, set <b>Provider</b> (e.g. <i>Cloudflare</i>, <i>Wasabi</i>, <i>Minio</i>) and its <b>Endpoint URL</b>.</p>
+      </details>
       <div class="toggle border-b border-slate-100"><div class="t-txt">Upload to S3</div>
         <label class="sw"><input type="checkbox" data-path="storage.s3.enabled"><i></i></label></div>
       <div class="grid2 mt-2">

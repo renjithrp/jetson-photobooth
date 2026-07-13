@@ -10,33 +10,41 @@ def _dist(a, b) -> float:
     return ((a.x - b.x) ** 2 + (a.y - b.y) ** 2) ** 0.5
 
 
+# tip/PIP landmark pairs for index, middle, ring, pinky
+_FINGERS = ((8, 6), (12, 10), (16, 14), (20, 18))
+
+
 def thumb_debug(lm) -> str:
     """Human-readable thumbs-up geometry for tuning (logged by the hub)."""
     hand = _dist(lm[0], lm[9]) or 1e-6
 
     def ext(tip, pip):
         return lm[tip].y < lm[pip].y
-    count = sum([ext(8, 6), ext(12, 10), ext(16, 14), ext(20, 18)])
+    count = sum(ext(t, p) for t, p in _FINGERS)
     above = round((lm[5].y - lm[4].y) / hand, 2)   # thumb above knuckle, in palm units
     return f"fingers_up={count}(need 0) thumb_above_knuckle={above}(need>0.10)"
 
 
 def gesture_matches(gtype: str, lm) -> bool:
-    def ext(tip, pip):
-        return lm[tip].y < lm[pip].y
+    hand = _dist(lm[0], lm[9]) or 1e-6
 
-    idx, mid, ring, pinky = ext(8, 6), ext(12, 10), ext(16, 14), ext(20, 18)
+    def ext(tip, pip, margin=0.0):
+        return lm[tip].y < lm[pip].y - margin * hand
+
+    idx, mid, ring, pinky = (ext(t, p) for t, p in _FINGERS)
     count = sum([idx, mid, ring, pinky])
     thumb_up = lm[4].y < lm[3].y
     # thumb "out to the side": tip far from the index knuckle, relative to hand size
-    hand = _dist(lm[0], lm[9]) or 1e-6
     thumb_out = (_dist(lm[4], lm[5]) / hand) > 0.7
 
     if gtype == "open_palm":
-        # Tolerate one finger not registering: at booth distance the low-res live
-        # view makes the pinky/ring landmarks noisy, so a real open hand often reads
-        # as 3/4 fingers up. Require >=3 rather than a perfect 4 (was count == 4).
-        return count >= 3
+        # Tolerate one finger not registering (pinky/ring landmarks are noisy at
+        # booth distance in the low-res live view), BUT the fingers that do count
+        # must be CLEARLY extended — tip well above the PIP joint, scaled to hand
+        # size — so a half-open / half-curled palm no longer fires.
+        m = 0.15
+        clear = sum(ext(t, p, m) for t, p in _FINGERS)
+        return clear >= 3
     if gtype == "fist":
         return count == 0 and not thumb_up
     if gtype == "peace":          # V sign ✌
@@ -59,6 +67,17 @@ def gesture_matches(gtype: str, lm) -> bool:
     if gtype == "love":           # 🤟 thumb + index + pinky
         return thumb_out and idx and pinky and not mid and not ring
     return count >= 1             # any_hand
+
+
+def hand_fully_in_frame(lm, margin: float = 0.02) -> bool:
+    """True when all five fingertips sit inside the frame. MediaPipe extrapolates
+    landmarks for a hand that is partially outside the image, so a half-visible
+    palm at the frame edge can otherwise read as an open palm. The wrist is
+    deliberately NOT checked: in the normal booth pose the raised forearm enters
+    from the bottom of the frame and the wrist may sit at/below the bottom edge."""
+    return all(margin <= lm[i].x <= 1.0 - margin and
+               margin <= lm[i].y <= 1.0 - margin
+               for i in (4, 8, 12, 16, 20))
 
 
 # ---------------------------------------------------------------------------

@@ -15,7 +15,8 @@ import time
 import urllib.request
 from typing import Callable, Optional
 
-from .gestures import any_face_in_zone, gesture_matches, hand_on_face, thumb_debug
+from .gestures import (any_face_in_zone, gesture_matches, hand_fully_in_frame,
+                       hand_on_face, thumb_debug)
 from .models import Settings
 
 
@@ -187,15 +188,19 @@ class SonyFrameHub:
             t = self.settings.trigger
             res = self._hands.process(rgb)
             hands_lm = res.multi_hand_landmarks
-            # handedness classification confidence (low score => likely a false hand)
+            # NOTE: `score` is the left/right HANDEDNESS confidence (>=0.5 by
+            # construction whenever a hand is found) — logged for debugging but
+            # not gated on; detection confidence is enforced by the Hands()
+            # min_detection_confidence instead.
             score = 0.0
             if hands_lm and res.multi_handedness:
                 try:
                     score = res.multi_handedness[0].classification[0].score
                 except Exception:
                     score = 0.0
-            gesture_ok = bool(hands_lm) and score >= 0.7 and \
-                self._matches(hands_lm[0].landmark)
+            in_frame = bool(hands_lm) and \
+                hand_fully_in_frame(hands_lm[0].landmark)
+            gesture_ok = in_frame and self._matches(hands_lm[0].landmark)
             detected = gesture_ok
             # When face gating is on we reject the ONE robust false-trigger case: a face
             # mis-read as a hand (palm centre sitting on a detected face) — that's what was
@@ -217,7 +222,8 @@ class SonyFrameHub:
                 self._last_dbg = now
                 extra = (" | " + thumb_debug(hands_lm[0].landmark)) if t.gesture_type == "thumbs_up" else ""
                 print(f"[hub-dbg] hand: want={t.gesture_type} match={gesture_ok} "
-                      f"score={score:.2f} on_face={on_face} in_zone={face_ok} -> fire={detected}{extra}")
+                      f"score={score:.2f} in_frame={in_frame} on_face={on_face} "
+                      f"in_zone={face_ok} -> fire={detected}{extra}")
             if detected:
                 if now - self._last_fire < t.cooldown_seconds:
                     return

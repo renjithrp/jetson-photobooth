@@ -1,5 +1,5 @@
 """Unit tests for hand-gesture classification (no camera / MediaPipe needed)."""
-from backend.gestures import gesture_matches
+from backend.gestures import gesture_matches, hand_fully_in_frame
 
 
 class LM:
@@ -33,6 +33,30 @@ def hand(index=False, middle=False, ring=False, pinky=False,
 def test_open_palm():
     assert gesture_matches("open_palm", hand(True, True, True, True))
     assert not gesture_matches("fist", hand(True, True, True, True))
+
+
+def test_open_palm_tolerates_one_noisy_finger():
+    # pinky landmark noise at booth distance: 3 clearly-extended fingers still count
+    assert gesture_matches("open_palm", hand(True, True, True, False))
+
+
+def test_open_palm_rejects_half_open_hand():
+    # half-curled palm: every tip only a hair above its PIP joint — must NOT fire.
+    # hand size = 0.5, so the 0.15*hand margin requires tip.y < pip - 0.075.
+    lm = hand()
+    for tip in (8, 12, 16, 20):
+        lm[tip] = LM(0.5, 0.46)     # pip is at 0.5 -> barely above, not clearly
+    assert not gesture_matches("open_palm", lm)
+
+
+def test_hand_fully_in_frame():
+    # wrist at the very bottom edge (arm raised from below the frame) is fine —
+    # only the fingertips must be visible
+    lm = hand(True, True, True, True)
+    assert lm[0].y == 1.0
+    assert hand_fully_in_frame(lm)
+    lm[20] = LM(1.01, 0.3)          # pinky tip past the frame edge -> half-visible
+    assert not hand_fully_in_frame(lm)
 
 
 def test_fist():
