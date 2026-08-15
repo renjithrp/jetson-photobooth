@@ -15,8 +15,8 @@ import time
 import urllib.request
 from typing import Callable, Optional
 
-from .gestures import (any_face_in_zone, gesture_matches, hand_fully_in_frame,
-                       hand_on_face, thumb_debug)
+from .gestures import (WaveDetector, any_face_in_zone, gesture_matches,
+                       hand_fully_in_frame, hand_on_face, thumb_debug)
 from .models import Settings
 
 
@@ -44,6 +44,7 @@ class SonyFrameHub:
         self._cv2 = None
         self._np = None
         self._hold_start: Optional[float] = None
+        self._wave = WaveDetector()
         self._last_detected = 0.0    # last frame the gesture was accepted (hold grace)
         self._last_fire = 0.0
         self._last_dbg = 0.0
@@ -224,6 +225,23 @@ class SonyFrameHub:
                 print(f"[hub-dbg] hand: want={t.gesture_type} match={gesture_ok} "
                       f"score={score:.2f} in_frame={in_frame} on_face={on_face} "
                       f"in_zone={face_ok} -> fire={detected}{extra}")
+            if t.gesture_type == "wave":
+                # Temporal trigger: no hold — fire once the palm finishes its
+                # 3rd alternating swing (~ waving twice); see WaveDetector.
+                if detected:
+                    if now - self._last_fire < t.cooldown_seconds:
+                        return
+                    self._last_detected = now
+                    if self._wave.update(now, hands_lm[0].landmark):
+                        self._last_fire = now
+                        print("[hub] wave detected -> trigger")
+                        if t.gesture_start_delay > 0:
+                            time.sleep(t.gesture_start_delay)
+                        if self.on_gesture:
+                            self.on_gesture("gesture")
+                elif now - self._last_detected > 0.5:
+                    self._wave.reset()
+                return
             if detected:
                 if now - self._last_fire < t.cooldown_seconds:
                     return

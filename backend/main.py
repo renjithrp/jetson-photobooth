@@ -179,6 +179,23 @@ async def favicon() -> Response:
     return Response(status_code=204)
 
 
+# ---- session-path safety --------------------------------------------------
+def _session_dir(session: str) -> Path:
+    """Resolve a capture-session folder name to a path INSIDE the captures dir.
+
+    Replaces three copies of an ad-hoc ``.replace("/","").replace("..","")``
+    sanitizer that was both traversal-fragile and — for ``delete_session`` —
+    dangerous: inputs like ``"..."`` collapsed to ``"."`` and resolved to the
+    captures ROOT, so an rmtree there wiped the whole event. Resolve the real
+    path and require it to be a DIRECT child of the captures dir (never the root
+    itself, never an ancestor), raising 400 otherwise."""
+    root = config.captures_dir().resolve()
+    d = (root / session).resolve()
+    if d == root or d.parent != root:
+        raise HTTPException(400, "invalid session")
+    return d
+
+
 # ---- auth -----------------------------------------------------------------
 def _mask_secrets(data: dict) -> dict:
     """Never expose the admin PIN or stored passwords over the API."""
@@ -218,10 +235,34 @@ def _strip_blank_secret(partial: dict, path: list[str]) -> None:
         d.pop(path[-1], None)
 
 
+# Brute-force guard for the admin PIN. The captive proxy no longer exposes
+# /api/login to the hotspot, but this is defense-in-depth for anyone on the
+# management LAN: after too many failures from one IP we lock that IP out for a
+# growing window, so a 4-digit PIN can't be exhausted by scripting.
+_login_fails: dict[str, list] = {}      # ip -> [fail_count, locked_until_ts]
+_LOGIN_MAX_FAILS = 5
+_LOGIN_LOCK_S = 60
+
+
 @app.post("/api/login")
-async def login(body: dict, response: Response) -> dict:
+async def login(body: dict, request: Request, response: Response) -> dict:
+    ip = request.client.host if request.client else "?"
+    now = time.time()
+    rec = _login_fails.get(ip)
+    if rec and rec[1] > now:
+        raise HTTPException(429, f"too many attempts — wait {int(rec[1] - now)}s")
     if not auth.check_pin(str(body.get("pin", ""))):
+        # count the failure and, past the threshold, lock this IP out for a window
+        # that doubles each further failure (60s, 120s, 240s, …, capped at 1h).
+        n = (rec[0] if rec else 0) + 1
+        lock = now + min(_LOGIN_LOCK_S * 2 ** max(0, n - _LOGIN_MAX_FAILS), 3600) \
+            if n >= _LOGIN_MAX_FAILS else 0
+        _login_fails[ip] = [n, lock]
+        if len(_login_fails) > 1000:      # bound the map on a long-running booth
+            _login_fails.clear()
+        await asyncio.sleep(0.5)          # blunt rapid online guessing
         raise HTTPException(401, "invalid PIN")
+    _login_fails.pop(ip, None)            # clear on success
     response.set_cookie(auth.COOKIE_NAME, auth.make_token(), httponly=True,
                         samesite="lax", max_age=auth.TOKEN_TTL_DAYS * 86400)
     log.info("admin login")
@@ -241,8 +282,8 @@ async def auth_check(_: None = Depends(require_auth)) -> dict:
 
 @app.get("/s/{session}", response_class=HTMLResponse)
 async def share_page(session: str) -> HTMLResponse:
-    safe = session.replace("/", "").replace("..", "")
-    sess = config.captures_dir() / safe
+    sess = _session_dir(session)
+    safe = sess.name
     if not sess.is_dir():
         raise HTTPException(404, "session not found")
     imgs = sorted(p.name for p in sess.iterdir()
@@ -359,22 +400,37 @@ async def manual_focus() -> dict:
         return {"ok": False, "error": str(e)}
 
 
-_SERVICES = {"photobooth", "photobooth-camera", "photobooth-kiosk"}
+# Real systemd units the admin UI may control. NOTE: there is deliberately no
+# "photobooth-kiosk" here — the kiosk is a GNOME autostart entry, not a service,
+# so controlling it via systemctl always failed while the UI reported success.
+_SERVICES = {"photobooth", "photobooth-camera", "photobooth-captive",
+             "photobooth-gesture"}
 _ACTIONS = {"start", "stop", "restart"}
 
 
 @app.post("/api/system/service")
 async def service_control(body: dict, _: None = Depends(require_auth)) -> dict:
-    """Start/stop/restart booth services from the admin UI (app runs as root)."""
+    """Start/stop/restart booth services from the admin UI (app runs as root).
+
+    Reports the REAL systemctl outcome. Restarting the backend itself is the one
+    case that must be detached — it kills this request — so that returns
+    optimistically; every other unit runs synchronously and returns the true
+    exit status so a failed restart shows as a failure instead of a false ✓."""
     svc, action = body.get("service"), body.get("action")
     if svc not in _SERVICES or action not in _ACTIONS:
         raise HTTPException(400, "invalid service or action")
     unit = f"{svc}.service"
-    # Detached so the HTTP response returns immediately (systemctl restart can block
-    # several seconds, and restarting the backend itself would kill this request).
-    delay = "1" if svc == "photobooth" else "0"
-    subprocess.Popen(["sh", "-c", f"sleep {delay}; systemctl {action} {unit}"])
-    return {"ok": True, "detached": True, "service": svc, "action": action}
+    if svc == "photobooth":
+        # Detach: this restart tears down the process serving the request.
+        subprocess.Popen(["sh", "-c", f"sleep 1; systemctl {action} {unit}"])
+        return {"ok": True, "detached": True, "service": svc, "action": action}
+    loop = asyncio.get_running_loop()
+    r = await loop.run_in_executor(None, lambda: subprocess.run(
+        ["systemctl", action, unit], capture_output=True, text=True, timeout=30))
+    if r.returncode != 0:
+        return {"ok": False, "service": svc, "action": action,
+                "error": (r.stderr or "systemctl failed").strip()}
+    return {"ok": True, "service": svc, "action": action}
 
 
 @app.get("/api/preview/stream")
@@ -558,8 +614,7 @@ async def gallery() -> list[dict]:
 
 @app.delete("/api/gallery/{session}")
 async def delete_session(session: str, _: None = Depends(require_auth)) -> dict:
-    safe = session.replace("/", "").replace("..", "")
-    d = config.captures_dir() / safe
+    d = _session_dir(session)
     if not d.is_dir():
         raise HTTPException(404, "not found")
     shutil.rmtree(d, ignore_errors=True)
@@ -567,34 +622,41 @@ async def delete_session(session: str, _: None = Depends(require_auth)) -> dict:
 
 
 # ---- destination tests ----------------------------------------------------
+# These run rclone/FTP uploads that can block for 30-120s on flaky venue Wi-Fi.
+# They MUST go through the executor: called directly in an async handler they
+# freeze the whole event loop — kiosk preview, WebSocket state and gesture
+# captures all stall — turning one admin "Test" tap into a guest-visible outage.
+def _run_upload_test(fname: str, upload) -> dict:
+    tmp = config.data_dir() / fname
+    tmp.write_text("photobooth upload test")
+    try:
+        return upload([tmp])
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 @app.post("/api/test/gdrive")
 async def test_gdrive(_: None = Depends(require_auth)) -> dict:
     s = config.load()
-    tmp = config.data_dir() / "_gdrive_test.txt"
-    tmp.write_text("photobooth gdrive test")
-    res = uploaders.gdrive_upload([tmp], s.storage.gdrive)
-    tmp.unlink(missing_ok=True)
-    return res
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: _run_upload_test(
+        "_gdrive_test.txt", lambda f: uploaders.gdrive_upload(f, s.storage.gdrive)))
 
 
 @app.post("/api/test/ftp")
 async def test_ftp(_: None = Depends(require_auth)) -> dict:
     s = config.load()
-    tmp = config.data_dir() / "_ftp_test.txt"
-    tmp.write_text("photobooth ftp test")
-    res = uploaders.ftp_upload([tmp], s.storage.ftp)
-    tmp.unlink(missing_ok=True)
-    return res
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: _run_upload_test(
+        "_ftp_test.txt", lambda f: uploaders.ftp_upload(f, s.storage.ftp)))
 
 
 @app.post("/api/test/s3")
 async def test_s3(_: None = Depends(require_auth)) -> dict:
     s = config.load()
-    tmp = config.data_dir() / "_s3_test.txt"
-    tmp.write_text("photobooth s3 test")
-    res = uploaders.s3_upload([tmp], s.storage.s3)
-    tmp.unlink(missing_ok=True)
-    return res
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: _run_upload_test(
+        "_s3_test.txt", lambda f: uploaders.s3_upload(f, s.storage.s3)))
 
 
 # ---- Google Drive OAuth (configured entirely from the admin panel) --------
@@ -651,8 +713,12 @@ async def gdrive_oauth_callback(request: Request) -> HTMLResponse:
     data = urllib.parse.urlencode({
         "code": q["code"], "client_id": g.client_id, "client_secret": g.client_secret,
         "redirect_uri": st["redirect_uri"], "grant_type": "authorization_code"}).encode()
+    # Token exchange over the venue's internet can hang up to 20s — run it in the
+    # executor so it never blocks the event loop (kiosk/preview/gestures) mid-event.
+    loop = asyncio.get_running_loop()
     try:
-        raw = urllib.request.urlopen(urllib.request.Request(_GOOGLE_TOKEN, data=data), timeout=20).read()
+        raw = await loop.run_in_executor(None, lambda: urllib.request.urlopen(
+            urllib.request.Request(_GOOGLE_TOKEN, data=data), timeout=20).read())
         tok = json.loads(raw)
     except Exception as e:
         return HTMLResponse(_gdrive_result_page(False, f"token exchange failed: {e}"))
@@ -696,8 +762,7 @@ async def print_now(body: dict, _: None = Depends(require_auth)) -> dict:
     s = config.load()
     session = body.get("session")
     if session:
-        safe = str(session).replace("/", "").replace("..", "")
-        d = config.captures_dir() / safe
+        d = _session_dir(str(session))
         files = sorted(str(p) for p in d.iterdir()
                        if p.suffix.lower() in (".jpg", ".jpeg", ".png") and p.name != "qr.png") \
             if d.is_dir() else []

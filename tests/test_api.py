@@ -56,6 +56,38 @@ def test_invalid_settings_rejected(admin):
     assert r.status_code == 400
 
 
+def test_delete_session_cannot_wipe_captures_root(admin):
+    # Regression: the old sanitizer turned "..." into "." -> the captures ROOT,
+    # so DELETE /api/gallery/... rmtree'd every photo of the event.
+    root = config.captures_dir()
+    keep = root / "session_20260101_120000"
+    other = root / "session_20260101_130000"
+    keep.mkdir(parents=True, exist_ok=True)
+    other.mkdir(parents=True, exist_ok=True)
+    # "..." is the dangerous one: not a dot-segment, so no client/proxy normalizes
+    # it away — it reaches the handler and historically resolved to the captures
+    # root. ("." / ".." get normalized by the HTTP client to other routes.)
+    for bad in ("...", "..", "."):
+        r = admin.delete("/api/gallery/" + bad)
+        assert r.status_code != 200, f"{bad} -> {r.status_code}"
+    assert root.exists() and keep.exists() and other.exists()   # nothing wiped
+    # a legitimate session still deletes normally
+    assert admin.delete("/api/gallery/session_20260101_120000").status_code == 200
+    assert not keep.exists() and other.exists()
+
+
+def test_login_lockout_after_repeated_failures(client):
+    from backend import main
+    main._login_fails.clear()
+    try:
+        for _ in range(main._LOGIN_MAX_FAILS):
+            assert client.post("/api/login", json={"pin": "0000"}).status_code == 401
+        # locked out now — even the correct PIN is refused until the window passes
+        assert client.post("/api/login", json={"pin": "1234"}).status_code == 429
+    finally:
+        main._login_fails.clear()   # don't leak the lockout into other tests
+
+
 def test_health(client):
     j = client.get("/api/system/info").json()
     assert "version" in j and "disk" in j and "camera" in j

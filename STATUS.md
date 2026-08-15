@@ -46,6 +46,11 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
 - **Printing** (CUPS): OFF.
 - **Cloud uploads**: gdrive/S3/FTP all OFF (configured from admin → Sharing; Drive uses in-browser OAuth).
 
+## Key changes (2026-08-15 session)
+Apport disabled (`enabled=0` in `/etc/default/apport`, service stopped + disabled) so crash
+dialogs never appear on the kiosk. Trigger: one-off cameraDaemon SIGSEGV in its
+`Connect_TimeOut` path (auto-recovered); core dump archived at `~/crash-archive/`.
+
 ## Key changes (2026-07-08 session)
 Kiosk fullscreen (wmctrl) · gesture worker + distance tuning · gaze scaffold · OOM fix (zram+swap) · jetson_clocks · 1080p render + drop TensorRT EP · fix intermittent numpy/cv2 face-grouping race · kiosk hide-preview-during-processing · Google Drive (OAuth) + S3 uploads · captive Wi-Fi (AP IP fix, http/https auto-detect, pass-through default).
 

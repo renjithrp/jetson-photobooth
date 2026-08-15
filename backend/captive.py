@@ -38,7 +38,30 @@ BACKEND_ORIGIN = os.environ.get("BOOTH_BACKEND", "https://127.0.0.1:8000")
 AP_IP = os.environ.get("BOOTH_AP_IP", "192.168.50.1")
 
 # Routes handed through to the real backend over loopback TLS.
-_PROXY_PREFIXES = ("/api/", "/captures/", "/thumbs/", "/s/")
+#
+# SECURITY: guests on the open hotspot reach ONLY these routes. This used to be a
+# blanket "/api/" prefix, which silently exposed the ENTIRE backend API to every
+# guest — including /api/login (brute-forceable admin PIN), /api/gallery (list &
+# download every guest's photos), /api/settings (config/credential recon) and
+# /api/capture, /api/system/service, /api/hotspot, /api/wifi/*, /api/test/*.
+# The captive portal must forward the find-your-photos + sharing flow and nothing
+# else, so this is an explicit allowlist. Static photo trees (/captures, /thumbs)
+# and share pages (/s) are prefixes; the guest API routes are matched exactly so a
+# path like "/api/faces/find/../../login" can't sneak through.
+_PROXY_PREFIXES = ("/captures/", "/thumbs/", "/s/")
+_PROXY_EXACT = frozenset({
+    "/api/wifi/info",        # hotspot details + QR (also the origin-probe route)
+    "/api/faces/find",       # find my photos by selfie
+    "/api/faces/status",     # whether find-my-photos is available
+    "/api/share/options",    # which share buttons to show (email / links)
+    "/api/share/email",      # email my photos
+    "/api/share/links",      # public cloud links (WhatsApp)
+    "/api/download",         # zip download of selected photos
+})
+
+
+def _is_guest_route(path: str) -> bool:
+    return path in _PROXY_EXACT or path.startswith(_PROXY_PREFIXES)
 # Never proxy hop-by-hop / length headers — httpx already decoded the body.
 _DROP_RESP_HEADERS = {"content-encoding", "transfer-encoding", "connection",
                       "content-length", "keep-alive"}
@@ -112,10 +135,16 @@ async def _proxy(request: Request, path: str) -> Response:
                methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"])
 async def gateway(request: Request, full_path: str) -> Response:
     path = "/" + full_path
-    if path.startswith(_PROXY_PREFIXES):
+    if _is_guest_route(path):
         return await _proxy(request, path)
     if path in ("/", "/booth"):
         return _guest_page()
+    # Guests must never reach admin/config/control routes — anything under /api/
+    # that isn't an allowlisted guest route is refused here (not redirected, so a
+    # scripted probe gets a clean 404 rather than the guest page).
+    if path.startswith("/api/"):
+        return Response("Not found.", status_code=404, media_type="text/plain",
+                        headers=_NO_CACHE)
     # Anything else — an OS captive probe (captive.apple.com/hotspot-detect.html,
     # connectivitycheck.gstatic.com/generate_204, www.msftconnecttest.com, …) or a
     # random host the guest's phone hit — is a non-expected response, so the phone

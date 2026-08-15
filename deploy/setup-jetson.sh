@@ -69,8 +69,11 @@ sudo udevadm control --reload-rules 2>/dev/null || true
 say "systemd services"
 sudo cp "$APP/deploy/photobooth.service" /etc/systemd/system/
 sudo cp "$APP/deploy/photobooth-camera.service" /etc/systemd/system/
+sudo install -m 755 "$APP/deploy/camera-usb-kick.sh" /usr/local/bin/
+sudo cp "$APP/deploy/camera-usb-kick.service" /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now photobooth.service
+sudo systemctl enable camera-usb-kick.service   # boot-time USB replug if camera missing
 sudo systemctl enable --now photobooth-camera.service || true   # waits for camera
 
 say "kiosk autostart ($KIOSK_USER GNOME session)"

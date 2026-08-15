@@ -36,8 +36,8 @@ class TriggerSettings(BaseModel):
     gpio_active_low: bool = True
     gpio_debounce_ms: int = 200
     # Gesture (MediaPipe hands on the preview camera)
-    gesture_type: Literal["open_palm", "fist", "peace", "thumbs_up", "three",
-                          "rock", "one", "pinky", "call_me", "love",
+    gesture_type: Literal["open_palm", "wave", "fist", "peace", "thumbs_up",
+                          "three", "rock", "one", "pinky", "call_me", "love",
                           "any_hand"] = "open_palm"
     gesture_hold_seconds: float = 1.5     # how long the gesture must be held
     gesture_start_delay: float = 0.0      # extra delay after detect before countdown

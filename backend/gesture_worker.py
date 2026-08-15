@@ -98,6 +98,7 @@ class GestureWorker:
             max_num_hands=1, min_detection_confidence=0.6, min_tracking_confidence=0.5)
         self._face = None  # lazily created when require_face is on
         self._hold_start: float | None = None
+        self._wave = gestures.WaveDetector()
         self._last_detected = 0.0
         self._last_fire = 0.0
         self._last_dbg = 0.0
@@ -215,12 +216,31 @@ class GestureWorker:
                 self._last_dbg = now
                 extra = (" | " + gestures.thumb_debug(hands_lm[0].landmark)
                          ) if gtype == "thumbs_up" else ""
+                if gtype == "wave":
+                    extra += f" swings={self._wave.swings}"
                 _log(f"hand: want={gtype} match={gesture_ok} score={score:.2f} "
                      f"in_frame={in_frame} on_face={on_face} in_zone={face_ok} "
                      f"-> fire={detected}{extra}")
 
             hold = float(getattr(t, "gesture_hold_seconds", 1.5))
             cooldown = float(getattr(t, "cooldown_seconds", 5.0))
+            if gtype == "wave":
+                # Temporal trigger: no hold — fire the moment the palm finishes
+                # its 3rd alternating swing (~ waving twice). Brief tracking
+                # gaps (<0.5s) keep the swing count; longer ones reset it.
+                if detected:
+                    if now - self._last_fire < cooldown:
+                        return
+                    self._last_detected = now
+                    if self._wave.update(now, hands_lm[0].landmark):
+                        self._last_fire = now
+                        delay = float(getattr(t, "gesture_start_delay", 0.0))
+                        if delay > 0:
+                            time.sleep(delay)
+                        self._fire()
+                elif now - self._last_detected > 0.5:
+                    self._wave.reset()
+                return
             if detected:
                 if now - self._last_fire < cooldown:
                     return

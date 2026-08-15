@@ -61,12 +61,25 @@ class CameraWatchdog:
         if now - self._last_action < self.cooldown_s:
             return False  # respect cooldown so we don't restart-storm
         self._last_action = now
+        reason = f"live view stalled >{self.stall_s}s while daemon up"
+        log.warning("[watchdog] %s — auto-restarting camera daemon", reason)
+        # Run synchronously and check the result: restarting the camera daemon does
+        # NOT kill this backend, so there's no reason to detach — and detaching hid
+        # the fact that the restart was silently failing. Only count a restart and
+        # report recovery once systemctl actually succeeds.
+        try:
+            r = subprocess.run(["systemctl", "restart", "photobooth-camera.service"],
+                               capture_output=True, text=True, timeout=30)
+        except Exception as e:
+            log.error("[watchdog] restart command failed to run: %s", e)
+            return False
+        if r.returncode != 0:
+            log.error("[watchdog] systemctl restart photobooth-camera failed (rc=%d): %s",
+                      r.returncode, (r.stderr or "").strip())
+            return False
         self.restarts += 1
-        self.last_reason = f"live view stalled >{self.stall_s}s while daemon up"
-        log.warning("[watchdog] %s — auto-restarting camera daemon (#%d)",
-                    self.last_reason, self.restarts)
-        # detached so a slow systemctl can't block this thread
-        subprocess.Popen(["sh", "-c", "systemctl restart photobooth-liveview.service"])
+        self.last_reason = reason
+        log.warning("[watchdog] camera daemon restarted (#%d)", self.restarts)
         return True
 
     def stop(self) -> None:

@@ -159,9 +159,8 @@
       <div class="flex flex-wrap gap-2">
         <button class="btn btn-ghost" onclick="svc('photobooth','restart')">↻ Restart app</button>
         <button class="btn btn-ghost" onclick="svc('photobooth-camera','restart')">↻ Restart camera</button>
-        <button class="btn btn-ghost" onclick="svc('photobooth-kiosk','restart')">↻ Restart kiosk</button>
-        <button class="btn btn-ghost" onclick="svc('photobooth-kiosk','stop')">■ Stop kiosk</button>
-        <button class="btn btn-ghost" onclick="svc('photobooth-kiosk','start')">▶ Start kiosk</button>
+        <button class="btn btn-ghost" onclick="svc('photobooth-gesture','restart')">↻ Restart gesture</button>
+        <button class="btn btn-ghost" onclick="svc('photobooth-captive','restart')">↻ Restart captive Wi-Fi</button>
       </div>
       <p class="mt-3 text-sm text-slate-500"><svg class="ic"><use href="#i-phone"/></svg> Capture from your phone:
         <a class="text-teal-600 font-semibold underline" href="/control" target="_blank">open remote control →</a></p>
@@ -186,7 +185,8 @@
       <p class="sub">The hand sign guests show to start. Hold it briefly to avoid accidental triggers.</p>
       <div class="grid2">
         <div><label class="fld">Gesture</label><select data-path="trigger.gesture_type">
-          <option value="open_palm">✋ Open palm</option><option value="fist">✊ Fist</option>
+          <option value="open_palm">✋ Open palm</option><option value="wave">👋 Wave twice</option>
+          <option value="fist">✊ Fist</option>
           <option value="peace">✌️ Peace</option><option value="thumbs_up">👍 Thumbs up</option>
           <option value="three">🤟 Three fingers</option><option value="rock">🤘 Rock</option>
           <option value="one">☝️ Point up</option><option value="pinky">🤙 Pinky</option>
@@ -668,6 +668,13 @@ $("#pin").addEventListener("keydown", e => { if(e.key==="Enter") unlock(); });
 
 /* ---- settings bind ---- */
 function populate(){
+  // The printer <select> only gets its real options when the Sharing tab calls
+  // loadPrinters(). Without a matching <option> the saved value collapses to ""
+  // and Save then WIPES printing.printer. Inject the saved printer as an option
+  // up-front so it round-trips no matter which tab you save from.
+  const psel = $("#printerSel"), pcur = getPath(SETTINGS,"printing.printer") || "";
+  if (psel && pcur && ![...psel.options].some(o=>o.value===pcur))
+    psel.insertAdjacentHTML("beforeend", `<option value="${pcur}">${pcur}</option>`);
   $$("[data-path]").forEach(el=>{
     const v = getPath(SETTINGS, el.dataset.path);
     if (v===undefined||v===null) return;

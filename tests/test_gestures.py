@@ -1,5 +1,5 @@
 """Unit tests for hand-gesture classification (no camera / MediaPipe needed)."""
-from backend.gestures import gesture_matches, hand_fully_in_frame
+from backend.gestures import WaveDetector, gesture_matches, hand_fully_in_frame
 
 
 class LM:
@@ -111,3 +111,58 @@ def test_love():
 def test_any_hand():
     assert gesture_matches("any_hand", hand(index=True))
     assert not gesture_matches("any_hand", hand())
+
+
+# ---- wave (👋 temporal trigger) --------------------------------------------
+# The test hand's size (wrist->middle MCP) is 0.5, so one qualifying swing must
+# travel >= MIN_SWING * 0.5 = 0.45 in frame units.
+
+def wave_hand(dx):
+    """Open palm shifted horizontally by dx (simulates the hand mid-wave)."""
+    lm = hand(True, True, True, True)
+    for p in lm:
+        p.x += dx
+    return lm
+
+
+def test_wave_pose_is_open_palm():
+    assert gesture_matches("wave", hand(True, True, True, True))
+    assert not gesture_matches("wave", hand())
+
+
+def test_wave_fires_on_third_alternating_swing():
+    w = WaveDetector()
+    assert not w.update(0.00, wave_hand(0.0))     # anchor
+    assert not w.update(0.15, wave_hand(+0.5))    # swing 1 (right)
+    assert not w.update(0.30, wave_hand(-0.0))    # swing 2 (back left)
+    assert w.update(0.45, wave_hand(+0.5))        # swing 3 -> fire
+
+
+def test_wave_static_palm_never_fires():
+    w = WaveDetector()
+    assert not any(w.update(i * 0.15, wave_hand(0.0)) for i in range(40))
+
+
+def test_wave_ignores_small_jitter():
+    w = WaveDetector()
+    assert not any(w.update(i * 0.15, wave_hand(0.1 * (-1) ** i))
+                   for i in range(40))
+
+
+def test_wave_one_direction_sweep_never_fires():
+    # A hand steadily crossing the frame is not a wave.
+    w = WaveDetector()
+    assert not any(w.update(i * 0.15, wave_hand(i * 0.05)) for i in range(20))
+
+
+def test_wave_count_resets_after_pause():
+    w = WaveDetector()
+    assert not w.update(0.00, wave_hand(0.0))
+    assert not w.update(0.15, wave_hand(+0.5))    # swing 1
+    assert not w.update(0.30, wave_hand(0.0))     # swing 2
+    # hand pauses > MAX_IDLE: the count must restart, so the next two swings
+    # only reach 2 again and nothing fires
+    assert not w.update(2.00, wave_hand(0.0))     # reset (idle)
+    assert not w.update(2.15, wave_hand(+0.5))    # swing 1 again
+    assert not w.update(2.30, wave_hand(0.0))     # swing 2
+    assert w.swings == 2

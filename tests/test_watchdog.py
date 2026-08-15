@@ -69,9 +69,19 @@ class _Hub:
         return self._stalled
 
 
-def _watchdog(monkeypatch, hub, cfg, busy=False, cooldown=0.0):
+class _Completed:
+    def __init__(self, returncode, stderr=""):
+        self.returncode = returncode
+        self.stderr = stderr
+
+
+def _watchdog(monkeypatch, hub, cfg, busy=False, cooldown=0.0, rc=0):
     calls = []
-    monkeypatch.setattr(wd_mod.subprocess, "Popen", lambda *a, **k: calls.append(a))
+
+    def fake_run(cmd, **k):
+        calls.append(cmd)
+        return _Completed(rc)
+    monkeypatch.setattr(wd_mod.subprocess, "run", fake_run)
     w = CameraWatchdog(hub, cfg, lambda: busy, stall_s=1, cooldown_s=cooldown, check_s=0.01)
     return w, calls
 
@@ -80,6 +90,21 @@ def test_watchdog_restarts_on_stall(monkeypatch):
     w, calls = _watchdog(monkeypatch, _Hub(True), _Cfg("sony_http"))
     assert w._tick() is True
     assert len(calls) == 1 and w.restarts == 1
+
+
+def test_watchdog_restarts_the_real_unit(monkeypatch):
+    # Regression: the watchdog used to restart "photobooth-liveview.service",
+    # which does not exist, so the self-heal silently no-op'd forever.
+    w, calls = _watchdog(monkeypatch, _Hub(True), _Cfg("sony_http"))
+    w._tick()
+    assert calls[0] == ["systemctl", "restart", "photobooth-camera.service"]
+
+
+def test_watchdog_does_not_count_failed_restart(monkeypatch):
+    # A non-zero systemctl exit must NOT be reported as a successful restart.
+    w, calls = _watchdog(monkeypatch, _Hub(True), _Cfg("sony_http"), rc=1)
+    assert w._tick() is False
+    assert len(calls) == 1 and w.restarts == 0 and w.last_reason == ""
 
 
 def test_watchdog_ignores_when_streaming(monkeypatch):

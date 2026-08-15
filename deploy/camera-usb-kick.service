@@ -1,0 +1,14 @@
+# If the Sony camera is missing from the USB bus at boot, reset the fusb301
+# Type-C controller — a software "replug" that clears the camera's stale
+# PC-Remote session after a Jetson restart. See camera-usb-kick.sh for details.
+[Unit]
+Description=Kick the camera USB port if the Sony camera is missing at boot
+# Run before the camera daemon so it doesn't grab the camera mid-reset.
+Before=photobooth-camera.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/camera-usb-kick.sh
+
+[Install]
+WantedBy=multi-user.target

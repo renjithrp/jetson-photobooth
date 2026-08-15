@@ -37,7 +37,9 @@ def gesture_matches(gtype: str, lm) -> bool:
     # thumb "out to the side": tip far from the index knuckle, relative to hand size
     thumb_out = (_dist(lm[4], lm[5]) / hand) > 0.7
 
-    if gtype == "open_palm":
+    if gtype in ("open_palm", "wave"):
+        # "wave" is an open palm per-frame; the side-to-side motion is judged
+        # over time by WaveDetector (the caller owns one and feeds it frames).
         # Tolerate one finger not registering (pinky/ring landmarks are noisy at
         # booth distance in the low-res live view), BUT the fingers that do count
         # must be CLEARLY extended — tip well above the PIP joint, scaled to hand
@@ -67,6 +69,56 @@ def gesture_matches(gtype: str, lm) -> bool:
     if gtype == "love":           # 🤟 thumb + index + pinky
         return thumb_out and idx and pinky and not mid and not ring
     return count >= 1             # any_hand
+
+
+class WaveDetector:
+    """Temporal detector for the 👋 "wave" trigger: an open palm swung
+    side-to-side. The caller feeds ``update(now, lm)`` one sample per detected
+    open-palm frame; it returns True once the palm has completed
+    ``SWINGS_NEEDED`` alternating horizontal swings (3 = out, back, out — i.e.
+    waving at least twice). Swing amplitude is measured in hand-lengths
+    (wrist -> middle knuckle), so near and far hands behave the same.
+
+    Works at the ~6 fps detection rate as long as the wave is a natural,
+    full-hand motion (~1 swing per 0.3 s or slower); tiny rapid flutters fall
+    between samples and are ignored, which also keeps noise from firing it."""
+
+    MIN_SWING = 0.9      # hand-lengths the palm centre must travel per swing
+    MAX_IDLE = 1.0       # s without swing progress before the count resets
+    SWINGS_NEEDED = 3    # 3 alternating swings ~= waving twice
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self.swings = 0
+        self._anchor: float | None = None   # turning point / far end of current swing
+        self._dir = 0                       # current swing direction: -1, 0, +1
+        self._last_progress = 0.0
+
+    def update(self, now: float, lm) -> bool:
+        hand = _dist(lm[0], lm[9]) or 1e-6
+        x = lm[9].x
+        if self._anchor is None or now - self._last_progress > self.MAX_IDLE:
+            self._anchor, self._dir, self.swings = x, 0, 0
+            self._last_progress = now
+            return False
+        delta = x - self._anchor
+        d = 1 if delta > 0 else -1
+        if d == self._dir:
+            # still travelling the current swing: anchor tracks its far end
+            self._anchor = x
+            self._last_progress = now
+        elif abs(delta) >= self.MIN_SWING * hand:
+            # moved far enough the other way: that's a new swing
+            self._dir = d
+            self._anchor = x
+            self._last_progress = now
+            self.swings += 1
+            if self.swings >= self.SWINGS_NEEDED:
+                self.reset()
+                return True
+        return False
 
 
 def hand_fully_in_frame(lm, margin: float = 0.02) -> bool:
