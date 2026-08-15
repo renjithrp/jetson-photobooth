@@ -224,6 +224,8 @@ class EmailSettings(BaseModel):
 class ShareSettings(BaseModel):
     qr_enabled: bool = True
     base_url: str = ""                    # override public URL; blank = auto-detect
+    whatsapp_optin: bool = False          # let guests leave a phone number for WhatsApp delivery
+    drive_optin: bool = False             # let guests opt a photo in for Google Drive upload
     email: EmailSettings = EmailSettings()
 
 

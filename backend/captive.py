@@ -56,6 +56,8 @@ _PROXY_EXACT = frozenset({
     "/api/share/options",    # which share buttons to show (email / links)
     "/api/share/email",      # email my photos
     "/api/share/links",      # public cloud links (WhatsApp)
+    "/api/share/whatsapp",   # leave a phone number for WhatsApp delivery
+    "/api/share/drive",      # opt a photo in for Google Drive upload
     "/api/download",         # zip download of selected photos
 })
 

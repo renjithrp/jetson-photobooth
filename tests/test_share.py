@@ -50,8 +50,44 @@ def test_download_rejects_bad_paths(client):
 
 def test_share_options_shape(client):
     j = client.get("/api/share/options").json()
-    assert set(j) == {"email", "links"}
+    assert set(j) == {"email", "links", "whatsapp", "drive_optin"}
     assert j["email"] is False          # not configured in tests
+    assert j["whatsapp"] is False and j["drive_optin"] is False
+
+
+def test_whatsapp_optin_collect_and_admin_flow(admin):
+    admin.put("/api/settings", json={"share": {"whatsapp_optin": True}})
+    urls = _make_session("session_wa", 2)
+    # guest opts in with a phone + their photos
+    r = admin.post("/api/share/whatsapp", json={"phone": "+1 555 010 2020", "photos": urls})
+    assert r.json()["ok"] and r.json()["added"] == 2
+    # opting in again with the same photos adds nothing (dedup)
+    assert admin.post("/api/share/whatsapp",
+                      json={"phone": "15550102020", "photos": urls}).json()["added"] == 0
+    # admin sees one pending recipient with a wa.me link
+    pend = admin.get("/api/consent/whatsapp/pending").json()
+    assert pend["count"] == 1
+    assert pend["pending"][0]["wa_link"].startswith("https://wa.me/15550102020")
+    # mark sent -> nothing pending
+    assert admin.post("/api/consent/whatsapp/sent", json={"phone": "15550102020"}).json()["ok"]
+    assert admin.get("/api/consent/whatsapp/pending").json()["count"] == 0
+
+
+def test_whatsapp_optin_refused_when_disabled(admin):
+    admin.put("/api/settings", json={"share": {"whatsapp_optin": False}})
+    urls = _make_session("session_wa2", 1)
+    r = admin.post("/api/share/whatsapp", json={"phone": "+15550102020", "photos": urls})
+    assert r.json()["ok"] is False          # opt-in refused unless enabled in settings
+
+
+def test_drive_optin_dedup_group_photo(admin):
+    admin.put("/api/settings", json={
+        "share": {"drive_optin": True},
+        "storage": {"gdrive": {"enabled": True}}})
+    (group,) = _make_session("session_grp", 1)
+    assert admin.post("/api/share/drive", json={"photos": [group]}).json()["added"] == 1
+    # a second guest opting the same group photo in adds nothing (uploaded once)
+    assert admin.post("/api/share/drive", json={"photos": [group]}).json()["added"] == 0
 
 
 def test_share_email_requires_config(client):

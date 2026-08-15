@@ -126,6 +126,8 @@ function gestureText(msg, gtype){
   const g = GEST[gtype] || GEST.any_hand;
   let out = (msg || "Show {gesture} to start!");
   if(!/\{gesture/.test(out)) out = out.replace("✋", "{gesture}");   // legacy default
+  // A wave is a motion, not a pose — tell guests to "wave", not "show".
+  if(gtype === "wave") out = out.replace(/^Show\b/, "Wave");
   return out.replace(/\{gesture_name\}/g, g[1]).replace(/\{gesture\}/g, g[0]);
 }
 let faceZone = null;        // {x,y,w,h} normalised, or null when face gating is off

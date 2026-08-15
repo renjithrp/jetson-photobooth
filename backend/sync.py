@@ -48,26 +48,50 @@ class SyncWorker:
         tmp.replace(self.path)
 
     # ---- API --------------------------------------------------------------
-    def enqueue(self, session: str, files: list, settings) -> None:
-        """Queue a finished session's files for whichever destinations are enabled."""
-        dests = uploaders.enabled_dests(settings)
+    def _append_job(self, session: str, files: list, dests: list[str]) -> None:
+        self.jobs.append({
+            "id": f"{session}.{'-'.join(dests)}.{int(time.time() * 1000)}",
+            "session": session,
+            "files": [str(f) for f in files],
+            "dests": dests,
+            "done": [],
+            "attempts": 0,
+            "next": 0.0,
+            "last_error": "",
+            "created": time.time(),
+            "status": "pending",
+        })
+
+    def enqueue(self, session: str, files: list, settings, exclude: set | None = None) -> None:
+        """Queue a finished session's files for whichever destinations are enabled.
+        `exclude` skips dests handled elsewhere — Google Drive is now guest-opt-in
+        (see enqueue_drive), so capture excludes it from the automatic upload."""
+        dests = [d for d in uploaders.enabled_dests(settings) if d not in (exclude or set())]
         if not dests:
             return
         with self._lock:
             if not self._loaded:
                 self._load()
-            self.jobs.append({
-                "id": f"{session}.{int(time.time() * 1000)}",
-                "session": session,
-                "files": [str(f) for f in files],
-                "dests": dests,
-                "done": [],
-                "attempts": 0,
-                "next": 0.0,
-                "last_error": "",
-                "created": time.time(),
-                "status": "pending",
-            })
+            self._append_job(session, files, dests)
+            self._save()
+
+    def enqueue_drive(self, files: list, settings) -> None:
+        """Queue specific already-captured files for Google Drive only (guest opt-in).
+        Grouped by session so remote paths stay organised. No-op if Drive isn't
+        enabled/configured — the opt-in is still recorded in the consent store, and
+        uploads once Drive is turned on and the photo is re-opted-in."""
+        if not settings.storage.gdrive.enabled:
+            return
+        groups: dict[str, list] = {}
+        for f in files:
+            groups.setdefault(Path(f).parent.name, []).append(str(f))
+        if not groups:
+            return
+        with self._lock:
+            if not self._loaded:
+                self._load()
+            for session, fs in groups.items():
+                self._append_job(session, fs, ["gdrive"])
             self._save()
 
     def retry_now(self) -> None:

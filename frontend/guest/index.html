@@ -53,11 +53,11 @@
   #bar .btn { flex:1; width:auto; max-width:none; padding:13px 10px; font-size:.95rem;
               border-radius:12px; }
   /* email dialog */
-  #emailBox { display:none; max-width:600px; margin:8px auto 0; gap:8px; }
-  #emailBox.show { display:flex; }
-  #emailBox input { flex:1; border:1px solid #ffffff22; background:#0d0f14; color:var(--fg);
+  #emailBox, #waOptBox { display:none; max-width:600px; margin:8px auto 0; gap:8px; }
+  #emailBox.show, #waOptBox.show { display:flex; }
+  #emailBox input, #waOptBox input { flex:1; border:1px solid #ffffff22; background:#0d0f14; color:var(--fg);
                     border-radius:12px; padding:12px 14px; font-size:1rem; min-width:0; }
-  #emailBox .btn { flex:none; width:auto; max-width:none; padding:12px 18px; }
+  #emailBox .btn, #waOptBox .btn { flex:none; width:auto; max-width:none; padding:12px 18px; }
   footer { color:var(--mut); font-size:.8rem; margin-top:34px; }
 </style>
 </head>
@@ -85,6 +85,10 @@
       <input type="email" id="emailTo" placeholder="your@email.com" autocomplete="email">
       <button class="btn" id="emailSend">Send</button>
     </div>
+    <div id="waOptBox">
+      <input type="tel" id="waPhone" placeholder="Phone with country code, e.g. +1 555 123 4567" autocomplete="tel">
+      <button class="btn" id="waOptSend">Save</button>
+    </div>
     <div class="row">
       <button class="btn" id="dlBtn">
         <svg class="ic" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -92,6 +96,12 @@
       <button class="btn secondary" id="waBtn" style="display:none">
         <svg class="ic" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/><path d="M8.5 9.5c.5 2.5 3.5 5.5 6 6l1.5-1.5 2 1c-.5 1.5-1.5 2-3 2-4 0-8-4-8-8 0-1.5.5-2.5 2-3l1 2z"/></svg>
         WhatsApp</button>
+      <button class="btn secondary" id="waOptBtn" style="display:none">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/><path d="M8.5 9.5c.5 2.5 3.5 5.5 6 6l1.5-1.5 2 1c-.5 1.5-1.5 2-3 2-4 0-8-4-8-8 0-1.5.5-2.5 2-3l1 2z"/></svg>
+        Get on WhatsApp</button>
+      <button class="btn secondary" id="driveBtn" style="display:none">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M12 2v10m0 0 4-4m-4 4-4-4"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+        Save to Drive</button>
       <button class="btn secondary" id="emBtn" style="display:none">
         <svg class="ic" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>
         Email</button>
@@ -164,6 +174,8 @@ function showResults(photos) {
         stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
     </div>`).join("");
   L("waBtn").style.display = (OPTS.links || (navigator.share && window.isSecureContext)) ? "" : "none";
+  L("waOptBtn").style.display = OPTS.whatsapp ? "" : "none";
+  L("driveBtn").style.display = OPTS.drive_optin ? "" : "none";
   L("emBtn").style.display = OPTS.email ? "" : "none";
   L("bar").classList.add("show");
   syncBar();
@@ -183,6 +195,8 @@ function syncBar() {
   L("dlLbl").textContent = n ? `Download (${n})` : "Download";
   L("dlBtn").disabled = !n;
   L("waBtn").disabled = !n;
+  L("waOptBtn").disabled = !n;
+  L("driveBtn").disabled = !n;
   L("emBtn").disabled = !n;
 }
 const selected = () => PHOTOS.filter(u => SEL.has(u));   // keep photo order
@@ -261,6 +275,48 @@ L("emailSend").onclick = async () => {
     }
   } catch (e) { hint("Sending failed.", false, true); }
   L("emailSend").disabled = false;
+};
+
+/* ---- WhatsApp opt-in: leave a number, get photos sent later ---- */
+L("waOptBtn").onclick = () => {
+  L("waOptBox").classList.toggle("show");
+  if (L("waOptBox").classList.contains("show")) L("waPhone").focus();
+};
+L("waOptSend").onclick = async () => {
+  const phone = L("waPhone").value.trim();
+  const sel = selected();
+  if (phone.replace(/\D/g, "").length < 7) { hint("Enter your phone number with country code.", false, true); return; }
+  if (!sel.length) return;
+  L("waOptSend").disabled = true;
+  hint("Saving…", true);
+  try {
+    const r = await (await fetch("/api/share/whatsapp", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, photos: sel }) })).json();
+    if (r.ok) {
+      hint(`Got it — we'll send ${r.total} photo${r.total > 1 ? "s" : ""} to WhatsApp shortly.`);
+      L("waOptBox").classList.remove("show");
+    } else {
+      hint(r.error || "Couldn't save your number.", false, true);
+    }
+  } catch (e) { hint("Couldn't save your number.", false, true); }
+  L("waOptSend").disabled = false;
+};
+
+/* ---- Google Drive opt-in ---- */
+L("driveBtn").onclick = async () => {
+  const sel = selected();
+  if (!sel.length) return;
+  L("driveBtn").disabled = true;
+  hint("Saving to Google Drive…", true);
+  try {
+    const r = await (await fetch("/api/share/drive", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photos: sel }) })).json();
+    hint(r.ok ? "Saved to Google Drive ✓ (uploads when the booth is online)"
+             : (r.error || "Couldn't save to Drive."), !r.ok, !r.ok);
+  } catch (e) { hint("Couldn't save to Drive.", false, true); }
+  L("driveBtn").disabled = false;
 };
 </script>
 </body>

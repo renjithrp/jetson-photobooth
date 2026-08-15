@@ -143,8 +143,9 @@ class GestureWorker:
     # ---- MJPEG reader -> detection -------------------------------------------
     def run(self) -> None:
         url = self.base + "/api/preview/stream"
-        detect_period = 0.15  # ~6 fps hand detection
-        last_detect = 0.0
+        detect_period = 0.15   # ~6 fps hand detection (plenty for a held/static gesture)
+        wave_period = 0.05     # wave is a temporal gesture — sample as fast as the stream
+        last_detect = 0.0      # allows so each side-to-side swing is actually caught
         while True:
             try:
                 resp = _opener(url, timeout=15)
@@ -161,8 +162,11 @@ class GestureWorker:
                         break
                     buf += chunk
                     frame, buf = self._extract_jpeg(buf)
+                    period = (wave_period
+                              if getattr(self.trigger, "gesture_type", "") == "wave"
+                              else detect_period)
                     if frame and self._gesture_active and \
-                            time.time() - last_detect > detect_period:
+                            time.time() - last_detect > period:
                         last_detect = time.time()
                         self._refresh_settings()
                         self._detect(frame)

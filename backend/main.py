@@ -30,8 +30,8 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from . import (auth, config, face_index, faces, gestures, liveview, printing, share,
-               uploaders, wifi)
+from . import (auth, config, consent, face_index, faces, gestures, liveview, printing,
+               share, uploaders, wifi)
 from .sync import worker as sync_worker
 from .auth import require_auth
 from .faces import make_face_engine
@@ -523,7 +523,8 @@ async def download_zip(p: list[str] = Query([])) -> FileResponse:
 
 @app.get("/api/share/options")
 async def share_options() -> dict:
-    """What the guest page can offer: email sending and/or public links (WhatsApp)."""
+    """What the guest page can offer: email, public links (WhatsApp), collect-my-
+    number for WhatsApp, and opt-in-to-Google-Drive."""
     s = config.load()
     st = s.storage
     e = s.share.email
@@ -531,7 +532,64 @@ async def share_options() -> dict:
         "email": bool(e.enabled and e.smtp_host and e.smtp_user),
         "links": bool((st.s3.enabled and st.s3.bucket and st.s3.access_key_id)
                       or (st.gdrive.enabled and st.gdrive.token)),
+        "whatsapp": bool(s.share.whatsapp_optin),
+        "drive_optin": bool(s.share.drive_optin and st.gdrive.enabled),
     }
+
+
+@app.post("/api/share/whatsapp")
+async def share_whatsapp(body: dict) -> dict:
+    """Guest opt-in: store a phone number + the guest's photos for later WhatsApp
+    delivery (collect-only; the admin sends when back online). Deduped."""
+    if not config.load().share.whatsapp_optin:
+        return {"ok": False, "error": "WhatsApp opt-in is disabled"}
+    return consent.store.whatsapp_optin(str(body.get("phone", "")),
+                                        list(body.get("photos") or []))
+
+
+@app.post("/api/share/drive")
+async def share_drive(body: dict) -> dict:
+    """Guest opt-in: mark a set of photos for Google Drive upload. Each photo is
+    enqueued at most once (group photos opted in by several guests upload once)."""
+    s = config.load()
+    if not (s.share.drive_optin and s.storage.gdrive.enabled):
+        return {"ok": False, "error": "Google Drive opt-in is disabled"}
+    r = consent.store.drive_optin(list(body.get("photos") or []))
+    if r.get("new"):
+        files = share.resolve_photos(r["new"])
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, lambda: sync_worker.enqueue_drive(files, s))
+    return {"ok": r["ok"], "added": r.get("added", 0), "error": r.get("error")}
+
+
+@app.get("/api/consent/whatsapp/pending")
+async def whatsapp_pending(_: None = Depends(require_auth)) -> dict:
+    """Admin send console: recipients with photos not yet sent, each with a wa.me
+    click-to-chat link. NOTE: wa.me can only open a chat with prefilled text — the
+    photos travel as the download link below, which the guest must be able to reach
+    (booth network, or a public Drive/S3 link once uploaded)."""
+    base = guest_base_url()
+    booth = config.load().general.booth_name
+    out = []
+    for r in consent.store.whatsapp_pending():
+        qs = "&".join("p=" + urllib.parse.quote(u) for u in r["photos"])
+        dl = f"{base}/api/download?{qs}"
+        text = urllib.parse.quote(f"Hi! Here are your photos from {booth}: {dl}")
+        out.append({**r, "download_url": dl,
+                    "wa_link": f"https://wa.me/{r['phone']}?text={text}"})
+    return {"pending": out, "count": len(out)}
+
+
+@app.post("/api/consent/whatsapp/sent")
+async def whatsapp_sent(body: dict, _: None = Depends(require_auth)) -> dict:
+    """Admin: mark a recipient's photos delivered so they're never queued again."""
+    return consent.store.whatsapp_mark_sent(str(body.get("phone", "")),
+                                            body.get("photos"))
+
+
+@app.get("/api/consent/stats")
+async def consent_stats(_: None = Depends(require_auth)) -> dict:
+    return consent.store.stats()
 
 
 _email_last: dict[str, float] = {}      # client ip -> last send ts (light rate limit)

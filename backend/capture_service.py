@@ -167,9 +167,11 @@ class CaptureService:
         # or missing network never blocks the review screen. Legacy inline upload when off.
         if s.storage.background_sync:
             from .sync import worker as sync_worker
-            sync_worker.enqueue(session_id, finals, s)
-            queued = [d for d, on in (("gdrive", s.storage.gdrive.enabled),
-                                      ("ftp", s.storage.ftp.enabled)) if on]
+            # Google Drive is guest-opt-in now (default off), so it's excluded from the
+            # automatic per-session upload — only photos a guest opts in reach Drive.
+            sync_worker.enqueue(session_id, finals, s, exclude={"gdrive"})
+            queued = [d for d, on in (("ftp", s.storage.ftp.enabled),
+                                      ("s3", s.storage.s3.enabled)) if on]
             upload_results = {"queued": queued} if queued else {}
         else:
             upload_results = await loop.run_in_executor(None, lambda: uploaders.upload_all(finals, s))

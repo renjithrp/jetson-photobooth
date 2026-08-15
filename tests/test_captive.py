@@ -12,6 +12,7 @@ client = TestClient(app)
 GUEST_ROUTES = [
     "/api/wifi/info", "/api/faces/find", "/api/faces/status",
     "/api/share/options", "/api/share/email", "/api/share/links",
+    "/api/share/whatsapp", "/api/share/drive",
     "/api/download", "/captures/session_x/1.jpg", "/thumbs/session_x/1.jpg",
     "/s/session_x",
 ]
@@ -19,6 +20,7 @@ BLOCKED_ROUTES = [
     "/api/login", "/api/gallery", "/api/settings", "/api/capture",
     "/api/system/service", "/api/system/info", "/api/hotspot", "/api/wifi/scan",
     "/api/wifi/connect", "/api/test/s3", "/api/faces/groups", "/api/print",
+    "/api/consent/whatsapp/pending", "/api/consent/whatsapp/sent",  # admin-only
     "/api/faces/find/../../login",   # traversal-style probe must not match
 ]
 

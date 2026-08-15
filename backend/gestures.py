@@ -83,8 +83,8 @@ class WaveDetector:
     full-hand motion (~1 swing per 0.3 s or slower); tiny rapid flutters fall
     between samples and are ignored, which also keeps noise from firing it."""
 
-    MIN_SWING = 0.9      # hand-lengths the palm centre must travel per swing
-    MAX_IDLE = 1.0       # s without swing progress before the count resets
+    MIN_SWING = 0.4      # hand-lengths the palm centre must travel per swing
+    MAX_IDLE = 1.5       # s without swing progress before the count resets
     SWINGS_NEEDED = 3    # 3 alternating swings ~= waving twice
 
     def __init__(self) -> None:
