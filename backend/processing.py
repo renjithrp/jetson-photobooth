@@ -15,12 +15,16 @@ def _load_rgba(path: str) -> Image.Image | None:
         return None
 
 
-def apply_overlay(img_path: Path, settings: Settings) -> None:
-    """Composite a full-frame PNG and/or a logo onto an image, in place."""
+def apply_overlay_img(base_rgb: Image.Image, settings: Settings) -> Image.Image | None:
+    """Composite a full-frame PNG and/or a logo onto an in-memory RGB image.
+
+    Returns the new RGB image, or None when overlay is disabled (caller keeps the
+    original). In-memory so the capture pipeline can chain effects and encode ONCE
+    instead of decoding/re-encoding the JPEG between every stage."""
     ov = settings.overlay
     if not ov.enabled:
-        return
-    base = Image.open(img_path).convert("RGBA")
+        return None
+    base = base_rgb.convert("RGBA")
 
     if ov.frame_png:
         frame = _load_rgba(ov.frame_png)
@@ -43,7 +47,17 @@ def apply_overlay(img_path: Path, settings: Settings) -> None:
             }
             base.alpha_composite(logo, positions.get(ov.logo_position, positions["br"]))
 
-    base.convert("RGB").save(img_path, "JPEG", quality=92)
+    return base.convert("RGB")
+
+
+def apply_overlay(img_path: Path, settings: Settings) -> None:
+    """Composite overlay onto the file in place (used for the collage — a single file
+    that isn't part of the per-shot in-memory chain)."""
+    if not settings.overlay.enabled:
+        return
+    out = apply_overlay_img(Image.open(img_path).convert("RGB"), settings)
+    if out is not None:
+        out.save(img_path, "JPEG", quality=92)
 
 
 def make_collage(paths: list[Path], settings: Settings, out_path: Path) -> Path:
@@ -80,10 +94,23 @@ def make_collage(paths: list[Path], settings: Settings, out_path: Path) -> Path:
     return out_path
 
 
+def apply_ai_img(img_rgb: Image.Image, settings: Settings) -> Image.Image | None:
+    """AI background remove/replace on an in-memory RGB image (see ai_effects).
+    Returns the new image, or None when disabled/unavailable (caller keeps original)."""
+    from . import ai_effects
+    return ai_effects.apply_background_img(img_rgb, settings)
+
+
 def apply_ai(img_path: Path, settings: Settings) -> None:
-    """AI background remove/replace via GPU segmentation (see ai_effects)."""
+    """AI background remove/replace via GPU segmentation, in place (see ai_effects)."""
     from . import ai_effects
     ai_effects.apply_background(img_path, settings)
+
+
+def measure_gaze(img_rgb: Image.Image, settings: Settings) -> None:
+    """Gaze measurement on an in-memory RGB image (scaffold: measures + logs only)."""
+    from . import gaze_effects
+    gaze_effects.measure_gaze(img_rgb, settings)
 
 
 def apply_gaze(img_path: Path, settings: Settings) -> None:

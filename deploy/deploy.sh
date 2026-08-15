@@ -31,7 +31,9 @@ done
 SERVICES="${SERVICES:-photobooth photobooth-gesture photobooth-captive}"
 
 echo "== rsync -> $HOST:$APP =="
-rsync -az --delete "${DRY[@]}" \
+# "${DRY[@]+...}" guards the empty-array expansion so this works under `set -u`
+# on macOS's stock bash 3.2 (where a bare "${DRY[@]}" errors when DRY is empty).
+rsync -az --delete ${DRY[@]+"${DRY[@]}"} \
   --exclude 'venv/' --exclude 'gesture-venv/' --exclude '.venv/' \
   --exclude 'data/' --exclude 'models/' --exclude 'wheels/' --exclude 'certs/' \
   --exclude '.git/' --exclude '.claude/' \

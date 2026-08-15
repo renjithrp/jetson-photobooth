@@ -39,9 +39,9 @@ class TriggerSettings(BaseModel):
     gesture_type: Literal["open_palm", "wave", "fist", "peace", "thumbs_up",
                           "three", "rock", "one", "pinky", "call_me", "love",
                           "any_hand"] = "open_palm"
-    gesture_hold_seconds: float = 1.5     # how long the gesture must be held
-    gesture_start_delay: float = 0.0      # extra delay after detect before countdown
-    cooldown_seconds: float = 5.0         # ignore triggers right after a session
+    gesture_hold_seconds: float = Field(1.5, ge=0)   # how long the gesture must be held
+    gesture_start_delay: float = Field(0.0, ge=0)    # extra delay after detect before countdown
+    cooldown_seconds: float = Field(5.0, ge=0)       # ignore triggers right after a session
     # Face gating — require a face inside a target zone before a gesture counts.
     # Stops the booth firing when no one is actually standing in front of it.
     require_face: bool = False
@@ -56,11 +56,13 @@ class TriggerSettings(BaseModel):
 
 
 class TimerSettings(BaseModel):
-    countdown_seconds: int = 3
-    num_shots: int = 1                    # >1 enables multi-shot
-    interval_seconds: float = 2.0         # gap between multi-shots
-    review_seconds: int = 10              # how long the result/QR stays up
-    attract_after_seconds: int = 60       # idle time before the attract screen
+    # Bounds guard the admin UI footgun where clearing a number field posts 0:
+    # num_shots=0 would capture nothing and show an empty review screen.
+    countdown_seconds: int = Field(3, ge=0, le=30)
+    num_shots: int = Field(1, ge=1, le=20)          # >1 enables multi-shot
+    interval_seconds: float = Field(2.0, ge=0)      # gap between multi-shots
+    review_seconds: int = Field(10, ge=0, le=300)   # how long the result/QR stays up
+    attract_after_seconds: int = Field(60, ge=1)    # idle time before the attract screen
 
 
 class CameraSettings(BaseModel):
@@ -81,7 +83,7 @@ class PreviewSettings(BaseModel):
     webcam_index: int = 0
     sony_http_url: str = "http://127.0.0.1:8080/"
     mirror: bool = True
-    fps: int = 15
+    fps: int = Field(15, ge=1, le=60)
 
 
 class GDriveDestination(BaseModel):
@@ -184,7 +186,7 @@ class PrintSettings(BaseModel):
     or any USB/network printer. The Arduino PRINT button prints the last session."""
     enabled: bool = False
     printer: str = ""                     # "" = system default (CUPS)
-    copies: int = 1
+    copies: int = Field(1, ge=1, le=20)
     media: str = ""                       # e.g. "4x6", "A6", "" = printer default
     fit_to_page: bool = True
     auto_print: bool = False              # print automatically after every session

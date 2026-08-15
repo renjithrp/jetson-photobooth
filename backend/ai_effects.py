@@ -9,6 +9,7 @@ through untouched, so the booth never fails a capture over an effect.
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 
 from PIL import Image
@@ -18,7 +19,11 @@ from .models import Settings
 log = logging.getLogger("booth.ai")
 
 # rembg sessions are expensive to build (load an ONNX) — cache one per (model, gpu).
+# Lock + single-entry cache for the same reasons as faces._APP_CACHE: no duplicate
+# concurrent builds, and switching model/gpu from admin frees the old session's GPU
+# memory instead of stacking a second one.
 _SESS_CACHE: dict = {}
+_SESS_LOCK = threading.Lock()
 
 
 def available() -> tuple[bool, str]:
@@ -46,15 +51,20 @@ def _session(model_name: str, use_gpu: bool):
     hit = _SESS_CACHE.get(key)
     if hit is not None:
         return hit
-    from rembg import new_session
-    # CUDA EP does all the work here; the TensorRT EP was only ever second (so it never
-    # got any nodes) yet still cost init time + GPU memory on boot — dropped.
-    providers = (["CUDAExecutionProvider", "CPUExecutionProvider"]
-                 if use_gpu else ["CPUExecutionProvider"])
-    sess = new_session(model_name, providers=providers)
-    _SESS_CACHE[key] = sess
-    log.info("AI segmentation ready (model=%s, gpu=%s)", model_name, use_gpu)
-    return sess
+    with _SESS_LOCK:
+        hit = _SESS_CACHE.get(key)          # double-check under the lock
+        if hit is not None:
+            return hit
+        from rembg import new_session
+        # CUDA EP does all the work here; the TensorRT EP was only ever second (so it never
+        # got any nodes) yet still cost init time + GPU memory on boot — dropped.
+        providers = (["CUDAExecutionProvider", "CPUExecutionProvider"]
+                     if use_gpu else ["CPUExecutionProvider"])
+        sess = new_session(model_name, providers=providers)
+        _SESS_CACHE.clear()                 # one session at a time (frees the old GPU model)
+        _SESS_CACHE[key] = sess
+        log.info("AI segmentation ready (model=%s, gpu=%s)", model_name, use_gpu)
+        return sess
 
 
 def warmup(settings: Settings) -> None:
@@ -71,20 +81,23 @@ def warmup(settings: Settings) -> None:
         log.warning("ai warmup skipped: %s", e)
 
 
-def apply_background(img_path: Path, settings: Settings) -> None:
-    """Remove or replace the background of the image at img_path, in place (JPEG)."""
+def apply_background_img(src_rgb: Image.Image, settings: Settings) -> Image.Image | None:
+    """Remove/replace the background of an in-memory RGB image.
+
+    Returns the new RGB image, or None when the effect is disabled, unavailable, or
+    fails — so the caller keeps the original photo (a booth never fails a capture
+    over an effect). In-memory so the capture pipeline decodes/encodes once."""
     ai = settings.ai
     if not ai.enabled or ai.effect == "none":
-        return
+        return None
     ok, detail = available()
     if not ok:
         log.warning("ai effect '%s' requested but %s; skipping", ai.effect, detail)
-        return
+        return None
     try:
         from rembg import remove
         sess = _session(ai.model or "u2net_human_seg", ai.use_gpu)
-        src = Image.open(img_path).convert("RGB")
-        cut = remove(src, session=sess)                 # RGBA subject with alpha matte
+        cut = remove(src_rgb, session=sess)             # RGBA subject with alpha matte
         if cut.mode != "RGBA":
             cut = cut.convert("RGBA")
 
@@ -95,10 +108,17 @@ def apply_background(img_path: Path, settings: Settings) -> None:
         else:
             bg = Image.new("RGBA", cut.size, _hex_rgba(ai.background_color))
 
-        out = Image.alpha_composite(bg, cut).convert("RGB")
-        out.save(img_path, "JPEG", quality=92)
+        return Image.alpha_composite(bg, cut).convert("RGB")
     except Exception as e:
         log.warning("ai background effect failed: %s", e)
+        return None
+
+
+def apply_background(img_path: Path, settings: Settings) -> None:
+    """Remove or replace the background of the image at img_path, in place (JPEG)."""
+    out = apply_background_img(Image.open(img_path).convert("RGB"), settings)
+    if out is not None:
+        out.save(img_path, "JPEG", quality=92)
 
 
 def _cover(img: Image.Image, size: tuple) -> Image.Image:

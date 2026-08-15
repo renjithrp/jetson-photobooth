@@ -89,16 +89,31 @@ class CaptureService:
         bus.publish({"type": "processing"})
 
         def process() -> list[Path]:
-            outputs = list(shots)
-            if s.overlay.enabled and s.overlay.apply_to in ("each", "both"):
-                for p in shots:
-                    processing.apply_overlay(p, s)
-            if s.gaze.enabled:                          # runs before apply_ai so landmarks
-                for p in shots:                         # see the original (un-composited) photo
-                    processing.apply_gaze(p, s)
-            if s.ai.enabled:
-                for p in shots:
-                    processing.apply_ai(p, s)
+            # Per shot: decode ONCE, run the enabled effects in memory, and re-encode
+            # ONCE — only if something actually changed (so an un-effected shot keeps
+            # its original camera JPEG instead of being recompressed). This replaces a
+            # chain that decoded+re-encoded the full-res JPEG at each stage.
+            from PIL import Image
+            apply_each = s.overlay.enabled and s.overlay.apply_to in ("each", "both")
+            for p in shots:
+                try:
+                    img = Image.open(p).convert("RGB")
+                except Exception as e:
+                    print(f"[process] cannot read {p}: {e}")
+                    continue
+                changed = False
+                if s.gaze.enabled:                      # measure the ORIGINAL, before overlay
+                    processing.measure_gaze(img, s)
+                if apply_each:
+                    out = processing.apply_overlay_img(img, s)
+                    if out is not None:
+                        img, changed = out, True
+                if s.ai.enabled:
+                    out = processing.apply_ai_img(img, s)
+                    if out is not None:
+                        img, changed = out, True
+                if changed:
+                    img.save(p, "JPEG", quality=92)
             final_list = shots
             if s.collage.enabled and len(shots) > 1:
                 collage = sess_dir / "collage.jpg"

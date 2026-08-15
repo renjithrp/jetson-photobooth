@@ -11,6 +11,7 @@ engine-agnostic, so `face_index` clustering is unchanged.
 from __future__ import annotations
 
 import logging
+import threading
 
 from . import config
 from .models import Settings
@@ -20,7 +21,12 @@ log = logging.getLogger("booth.faces")
 # Loading the InsightFace pack (5 ONNX models) costs tens of seconds, so keep ONE loaded
 # instance per (pack, det_size, gpu) config and share it across every engine instance —
 # make_face_engine() is called per capture session, and we must not reload each time.
+# The lock serialises the expensive build so a boot-warmup thread and a first capture
+# can't each load their own copy (leaking one in GPU memory); the cache holds at most
+# ONE config so changing det_size / model pack from admin frees the old app instead of
+# stacking a second ~1-2 GB model in the Jetson's unified memory (an OOM path).
 _APP_CACHE: dict = {}
+_APP_LOCK = threading.Lock()
 
 
 def _get_app(model_pack: str, det_size: int, use_gpu: bool):
@@ -28,35 +34,40 @@ def _get_app(model_pack: str, det_size: int, use_gpu: bool):
     hit = _APP_CACHE.get(key)
     if hit is not None:
         return hit
-    from insightface.app import FaceAnalysis
+    with _APP_LOCK:
+        hit = _APP_CACHE.get(key)           # double-check: another thread may have built it
+        if hit is not None:
+            return hit
+        from insightface.app import FaceAnalysis
 
-    if use_gpu:
-        # CUDA EP handles all nodes; TRT was only second (unused) but cost init + memory.
-        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        ctx_id = 0
-    else:
-        providers = ["CPUExecutionProvider"]
-        ctx_id = -1
-    # models live under <root>/models/<pack>/ — pin to the app dir so it works offline
-    # regardless of which user runs the service.
-    root = str(config.data_dir().parent)
-    # only load what grouping needs (detector + ArcFace embedding); skip the landmark and
-    # genderage models to cut load time + memory.
-    app = FaceAnalysis(name=model_pack, root=root, providers=providers,
-                       allowed_modules=["detection", "recognition"])
-    app.prepare(ctx_id=ctx_id, det_size=(det_size, det_size))
-    try:
-        in_use = list(app.models["recognition"].session.get_providers())
-    except Exception:
-        in_use = providers
-    log.info("InsightFace loaded (pack=%s, det=%d, providers=%s)", model_pack, det_size, in_use)
-    _APP_CACHE[key] = (app, in_use)
-    return _APP_CACHE[key]
+        if use_gpu:
+            # CUDA EP handles all nodes; TRT was only second (unused) but cost init + memory.
+            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            ctx_id = 0
+        else:
+            providers = ["CPUExecutionProvider"]
+            ctx_id = -1
+        # models live under <root>/models/<pack>/ — pin to the app dir so it works offline
+        # regardless of which user runs the service.
+        root = str(config.data_dir().parent)
+        # only load what grouping needs (detector + ArcFace embedding); skip the landmark and
+        # genderage models to cut load time + memory.
+        app = FaceAnalysis(name=model_pack, root=root, providers=providers,
+                           allowed_modules=["detection", "recognition"])
+        app.prepare(ctx_id=ctx_id, det_size=(det_size, det_size))
+        try:
+            in_use = list(app.models["recognition"].session.get_providers())
+        except Exception:
+            in_use = providers
+        log.info("InsightFace loaded (pack=%s, det=%d, providers=%s)", model_pack, det_size, in_use)
+        _APP_CACHE.clear()                  # never hold two face apps at once (frees the old GPU model)
+        _APP_CACHE[key] = (app, in_use)
+        return _APP_CACHE[key]
 
 
 def active_providers() -> list[str]:
     """The execution providers of the currently-loaded face model (for admin status)."""
-    for _app, prov in _APP_CACHE.values():
+    for _app, prov in list(_APP_CACHE.values()):
         return prov
     return []
 

@@ -650,7 +650,7 @@ function showTab(name){
   $$(".tab").forEach(t=>t.classList.toggle("active", t.dataset.tab===name));
   $$("[data-panel]").forEach(p=>p.style.display = p.dataset.panel===name ? "" : "none");
   try{ localStorage.setItem("booth_tab", name); }catch(e){}
-  if(name==="trigger") startZonePreview();
+  if(name==="trigger") startZonePreview(); else stopZonePreview();
   if(name==="network"){ loadNet(); }
   if(name==="sharing"){ loadSync(); loadPrinters(); refreshGdriveStatus(); }
   window.scrollTo({top:0,behavior:"instant"});
@@ -736,6 +736,16 @@ function startZonePreview(){
   if(!zoneStarted){ zoneStarted=true;
     img.onerror=()=>{ setTimeout(()=>{ img.src="/api/preview/stream?t="+Date.now(); },1500); }; }
   img.src="/api/preview/stream?t="+Date.now();
+}
+function stopZonePreview(){
+  // Leaving the Trigger tab must close the MJPEG connection, or a hidden <img>
+  // keeps a preview stream open for the life of the page (a per-viewer load on
+  // the software-rendering Jetson). Null the error handler first so clearing the
+  // src doesn't trip the reconnect.
+  const img=$("#zonePreview"); if(!img || !zoneStarted) return;
+  img.onerror=null;
+  img.removeAttribute("src");
+  zoneStarted=false;
 }
 function setupZoneDrag(){
   const wrap=$("#zoneWrap"), box=$("#zoneBox"), handle=$("#zoneHandle");

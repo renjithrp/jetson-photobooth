@@ -56,6 +56,18 @@ def test_invalid_settings_rejected(admin):
     assert r.status_code == 400
 
 
+def test_out_of_range_numbers_rejected(admin):
+    # Clearing a number field in the admin UI posts 0; bounds must reject the ones
+    # that would break a session instead of silently saving them.
+    for payload in ({"timer": {"num_shots": 0}},
+                    {"timer": {"num_shots": 999}},
+                    {"preview": {"fps": 0}},
+                    {"printing": {"copies": 0}}):
+        assert admin.put("/api/settings", json=payload).status_code == 400
+    # a valid in-range value still saves
+    assert admin.put("/api/settings", json={"timer": {"num_shots": 3}}).status_code == 200
+
+
 def test_delete_session_cannot_wipe_captures_root(admin):
     # Regression: the old sanitizer turned "..." into "." -> the captures ROOT,
     # so DELETE /api/gallery/... rmtree'd every photo of the event.

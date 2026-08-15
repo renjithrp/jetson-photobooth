@@ -50,6 +50,20 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
 Apport disabled (`enabled=0` in `/etc/default/apport`, service stopped + disabled) so crash
 dialogs never appear on the kiosk. Trigger: one-off cameraDaemon SIGSEGV in its
 `Connect_TimeOut` path (auto-recovered); core dump archived at `~/crash-archive/`.
+· Wave-twice gesture (`wave`) added. · `camera-usb-kick` boot service resets the Type-C
+controller when the Sony is missing from USB after a reboot (stale PC-Remote session).
+· Full multi-agent code review → fixed critical/high + medium findings and deployed:
+  - **watchdog** now restarts the real `photobooth-camera` unit and checks the result
+    (was a silent no-op against a nonexistent `photobooth-liveview`).
+  - **captive proxy** restricted to a guest-route allowlist — the hotspot no longer
+    exposes `/api/login`, `/api/gallery`, `/api/settings`, `/api/capture`, `/api/system/*`.
+  - **login** per-IP lockout; **delete_session** hardened (can't rmtree the captures root).
+  - **service controls** report the true systemctl status; phantom `photobooth-kiosk` gone.
+  - blocking test/OAuth calls moved off the event loop; **model caches** capped at one entry
+    + load-locked (OOM guard); **capture pipeline** decodes/encodes once per shot;
+    **SyncWorker** snapshots-then-merges (no more mid-upload dict race); numeric settings
+    bounds-checked; leaked camera-daemon sockets closed; admin face-zone preview stream
+    now stops on tab-switch.
 
 ## Key changes (2026-07-08 session)
 Kiosk fullscreen (wmctrl) · gesture worker + distance tuning · gaze scaffold · OOM fix (zram+swap) · jetson_clocks · 1080p render + drop TensorRT EP · fix intermittent numpy/cv2 face-grouping race · kiosk hide-preview-during-processing · Google Drive (OAuth) + S3 uploads · captive Wi-Fi (AP IP fix, http/https auto-detect, pass-through default).

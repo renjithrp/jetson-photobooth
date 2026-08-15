@@ -392,9 +392,12 @@ async def manual_focus() -> dict:
         return {"ok": False, "reason": "autofocus needs the Sony camera daemon"}
     base = (s.preview.sony_http_url or "http://127.0.0.1:8080/").rstrip("/")
     loop = asyncio.get_running_loop()
+
+    def _focus() -> bytes:
+        with urllib.request.urlopen(base + "/focus", timeout=8) as r:  # close the socket
+            return r.read()
     try:
-        raw = await loop.run_in_executor(
-            None, lambda: urllib.request.urlopen(base + "/focus", timeout=8).read())
+        raw = await loop.run_in_executor(None, _focus)
         return json.loads(raw.decode())
     except Exception as e:
         return {"ok": False, "error": str(e)}

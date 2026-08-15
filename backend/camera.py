@@ -167,9 +167,12 @@ def daemon_capture(settings: Settings, dest_dir: Path, count: int,
             on_shot(i + 1)
         before = {p.name for p in outdir.iterdir() if p.is_file()}
         try:
-            r = urllib.request.urlopen(base + "/capture",
-                                       timeout=settings.camera.capture_timeout_seconds + 10)
-            data = json.loads(r.read().decode())
+            # context-managed so the socket is always released, even on a slow/failed
+            # transfer — otherwise fds leak across an event day of captures.
+            with urllib.request.urlopen(
+                    base + "/capture",
+                    timeout=settings.camera.capture_timeout_seconds + 10) as r:
+                data = json.loads(r.read().decode())
         except Exception as e:
             raise CaptureError(f"daemon capture request failed: {e}")
         if not data.get("ok"):

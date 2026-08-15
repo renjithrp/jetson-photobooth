@@ -17,6 +17,7 @@ passes through untouched — the booth never fails a capture over this.
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 
 from . import config
@@ -26,7 +27,9 @@ log = logging.getLogger("booth.gaze")
 
 # One InsightFace app per (pack, det_size, gpu) — loading the ONNX pack is expensive.
 # Separate cache from faces.py because we need the landmark + pose modules it skips.
+# Lock + single-entry: serialise the build and never stack two apps in GPU memory.
 _APP_CACHE: dict = {}
+_APP_LOCK = threading.Lock()
 
 # Cumulative measurement counters (process lifetime) so the log shows a running trigger
 # rate, not just per-image noise. Reset on restart.
@@ -53,23 +56,28 @@ def _get_app(model_pack: str, det_size: int, use_gpu: bool):
     hit = _APP_CACHE.get(key)
     if hit is not None:
         return hit
-    from insightface.app import FaceAnalysis
+    with _APP_LOCK:
+        hit = _APP_CACHE.get(key)           # double-check under the lock
+        if hit is not None:
+            return hit
+        from insightface.app import FaceAnalysis
 
-    if use_gpu:
-        # CUDA EP handles all nodes; TRT was only second (unused) but cost init + memory.
-        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        ctx_id = 0
-    else:
-        providers = ["CPUExecutionProvider"]
-        ctx_id = -1
-    root = str(config.data_dir().parent)   # models under <root>/models/<pack>/, offline-safe
-    # detection + landmarks + head pose; recognition/genderage not needed for gaze.
-    app = FaceAnalysis(name=model_pack, root=root, providers=providers,
-                       allowed_modules=["detection", "landmark_2d_106", "landmark_3d_68"])
-    app.prepare(ctx_id=ctx_id, det_size=(det_size, det_size))
-    log.info("gaze detector loaded (pack=%s, det=%d, gpu=%s)", model_pack, det_size, use_gpu)
-    _APP_CACHE[key] = app
-    return app
+        if use_gpu:
+            # CUDA EP handles all nodes; TRT was only second (unused) but cost init + memory.
+            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            ctx_id = 0
+        else:
+            providers = ["CPUExecutionProvider"]
+            ctx_id = -1
+        root = str(config.data_dir().parent)   # models under <root>/models/<pack>/, offline-safe
+        # detection + landmarks + head pose; recognition/genderage not needed for gaze.
+        app = FaceAnalysis(name=model_pack, root=root, providers=providers,
+                           allowed_modules=["detection", "landmark_2d_106", "landmark_3d_68"])
+        app.prepare(ctx_id=ctx_id, det_size=(det_size, det_size))
+        log.info("gaze detector loaded (pack=%s, det=%d, gpu=%s)", model_pack, det_size, use_gpu)
+        _APP_CACHE.clear()                  # one gaze app at a time
+        _APP_CACHE[key] = app
+        return app
 
 
 def warmup(settings: Settings) -> None:
@@ -112,11 +120,43 @@ def _head_angles(face) -> tuple[float, float]:
     return abs(yaw), abs(pitch)
 
 
-def apply_gaze(img_path: Path, settings: Settings) -> None:
-    """SCAFFOLD: measure + log whether gaze correction would fire; leave the photo intact.
+def _measure(img_bgr, settings: Settings, name: str) -> None:
+    """Run the gaze gate over one BGR image and update the cumulative counters/log."""
+    g = settings.gaze
+    app = _get_app(settings.faces.model_pack, settings.faces.det_size, g.use_gpu)
+    faces = app.get(img_bgr)
 
-    Phase 3 will, for each face where `would_correct` is True, run the redirection model
-    on the eye crops and composite the result back — right here, in place."""
+    _STATS["images"] += 1
+    n_correct = 0
+    for f in faces:
+        yaw, pitch = _head_angles(f)
+        lm = getattr(f, "landmark_2d_106", None)
+        if lm is not None:
+            open_l = _eye_openness(lm, _LEFT_EYE)
+            open_r = _eye_openness(lm, _RIGHT_EYE)
+        else:
+            open_l = open_r = 1.0
+        eyes_open = min(open_l, open_r) >= g.min_eye_openness
+        frontal = yaw <= g.max_head_angle and pitch <= g.max_head_angle
+        would = frontal and eyes_open
+        n_correct += int(would)
+        log.info("gaze face: yaw=%.0f pitch=%.0f openL=%.2f openR=%.2f "
+                 "frontal=%s eyes_open=%s -> would_correct=%s",
+                 yaw, pitch, open_l, open_r, frontal, eyes_open, would)
+
+    _STATS["faces"] += len(faces)
+    _STATS["would_correct"] += n_correct
+    rate = (100.0 * _STATS["would_correct"] / _STATS["faces"]) if _STATS["faces"] else 0.0
+    log.info("gaze %s: %d face(s), %d would-correct | cumulative: %d/%d faces (%.0f%%) "
+             "over %d images [MEASURE ONLY — photo unchanged]",
+             name, len(faces), n_correct,
+             _STATS["would_correct"], _STATS["faces"], rate, _STATS["images"])
+
+
+def measure_gaze(img_rgb, settings: Settings) -> None:
+    """SCAFFOLD: measure + log whether gaze correction would fire, from an in-memory
+    PIL RGB image — no disk read, so the capture pipeline decodes the shot only once.
+    Measures the ORIGINAL photo (called before overlay compositing), matching intent."""
     g = settings.gaze
     if not g.enabled:
         return
@@ -126,38 +166,30 @@ def apply_gaze(img_path: Path, settings: Settings) -> None:
         return
     try:
         import cv2
-        app = _get_app(settings.faces.model_pack, settings.faces.det_size, g.use_gpu)
+        import numpy as np
+        img_bgr = cv2.cvtColor(np.asarray(img_rgb.convert("RGB")), cv2.COLOR_RGB2BGR)
+        _measure(img_bgr, settings, "in-memory")
+    except Exception as e:
+        log.warning("gaze measurement failed: %s", e)
+
+
+def apply_gaze(img_path: Path, settings: Settings) -> None:
+    """SCAFFOLD (path-based): measure + log whether gaze correction would fire; leave the
+    photo intact. Phase 3 will run the eye-redirection model here, in place."""
+    g = settings.gaze
+    if not g.enabled:
+        return
+    ok, detail = available()
+    if not ok:
+        log.warning("gaze requested but %s; skipping", detail)
+        return
+    try:
+        import cv2
         img = cv2.imread(str(img_path))
         if img is None:
             log.warning("gaze: could not read %s", img_path.name)
             return
-        faces = app.get(img)
-
-        _STATS["images"] += 1
-        n_correct = 0
-        for f in faces:
-            yaw, pitch = _head_angles(f)
-            lm = getattr(f, "landmark_2d_106", None)
-            if lm is not None:
-                open_l = _eye_openness(lm, _LEFT_EYE)
-                open_r = _eye_openness(lm, _RIGHT_EYE)
-            else:
-                open_l = open_r = 1.0
-            eyes_open = min(open_l, open_r) >= g.min_eye_openness
-            frontal = yaw <= g.max_head_angle and pitch <= g.max_head_angle
-            would = frontal and eyes_open
-            n_correct += int(would)
-            log.info("gaze face: yaw=%.0f pitch=%.0f openL=%.2f openR=%.2f "
-                     "frontal=%s eyes_open=%s -> would_correct=%s",
-                     yaw, pitch, open_l, open_r, frontal, eyes_open, would)
-
-        _STATS["faces"] += len(faces)
-        _STATS["would_correct"] += n_correct
-        rate = (100.0 * _STATS["would_correct"] / _STATS["faces"]) if _STATS["faces"] else 0.0
-        log.info("gaze %s: %d face(s), %d would-correct | cumulative: %d/%d faces (%.0f%%) "
-                 "over %d images [MEASURE ONLY — photo unchanged]",
-                 img_path.name, len(faces), n_correct,
-                 _STATS["would_correct"], _STATS["faces"], rate, _STATS["images"])
+        _measure(img, settings, img_path.name)
     except Exception as e:
         log.warning("gaze measurement failed on %s: %s", img_path.name, e)
 

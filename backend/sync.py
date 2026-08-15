@@ -9,6 +9,7 @@ stretch — a capture is never blocked on a slow or missing network. This is the
 """
 from __future__ import annotations
 
+import copy
 import json
 import threading
 import time
@@ -119,8 +120,15 @@ class SyncWorker:
     def _tick(self) -> None:
         s = config.load()
         now = time.time()
+        # Snapshot the due jobs as deep COPIES under the lock, then run the slow
+        # uploads (which we must NOT hold the lock across) mutating only the copies.
+        # Previously the live job dicts were mutated lock-free while enqueue()/status()
+        # ran json.dumps(self.jobs) under the lock — adding the "completed_at" key
+        # mid-serialisation raised "dictionary changed size during iteration", which
+        # surfaced to the guest as an ERROR screen right after a successful capture.
         with self._lock:
-            pending = [j for j in self.jobs if j["status"] == "pending" and j["next"] <= now]
+            pending = [copy.deepcopy(j) for j in self.jobs
+                       if j["status"] == "pending" and j["next"] <= now]
         if not pending:
             return
         changed = False
@@ -150,14 +158,22 @@ class SyncWorker:
             else:
                 j["attempts"] += 1
                 j["next"] = now + min(BACKOFF_CAP_S, 10 * (2 ** min(j["attempts"], 6)))
-        if changed:
-            with self._lock:
-                # trim old completed jobs so the queue file stays small
-                done = [j for j in self.jobs if j["status"] == "done"]
-                if len(done) > MAX_KEEP_DONE:
-                    keep = set(id(j) for j in sorted(done, key=lambda x: x.get("completed_at", 0))[-MAX_KEEP_DONE:])
-                    self.jobs = [j for j in self.jobs if j["status"] != "done" or id(j) in keep]
-                self._save()
+        if not changed:
+            return
+        with self._lock:
+            # Merge the upload results back onto the live job dicts (matched by id),
+            # so any job enqueued while we were uploading is left untouched.
+            by_id = {j["id"]: j for j in self.jobs}
+            for pj in pending:
+                live = by_id.get(pj["id"])
+                if live is not None:
+                    live.update(pj)
+            # trim old completed jobs so the queue file stays small
+            done = [j for j in self.jobs if j["status"] == "done"]
+            if len(done) > MAX_KEEP_DONE:
+                keep = set(id(j) for j in sorted(done, key=lambda x: x.get("completed_at", 0))[-MAX_KEEP_DONE:])
+                self.jobs = [j for j in self.jobs if j["status"] != "done" or id(j) in keep]
+            self._save()
 
 
 worker = SyncWorker()
