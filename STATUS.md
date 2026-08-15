@@ -1,6 +1,6 @@
 # PhotoBooth — Current Deployment Specs & State
 
-Snapshot as of **2026-07-08**. Live booth: `pb@192.168.86.30` (LAN), app at `/opt/photobooth`.
+Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/opt/photobooth`.
 
 ## Hardware / Platform
 | | |
@@ -46,9 +46,15 @@ Snapshot as of **2026-07-08**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
 - **Printing** (CUPS): OFF.
 - **Cloud uploads**: gdrive/S3/FTP all OFF (configured from admin → Sharing; Drive uses in-browser OAuth).
 
-## This session's key changes (repo `master`, local-only — no git remote)
+## Key changes (2026-07-08 session)
 Kiosk fullscreen (wmctrl) · gesture worker + distance tuning · gaze scaffold · OOM fix (zram+swap) · jetson_clocks · 1080p render + drop TensorRT EP · fix intermittent numpy/cv2 face-grouping race · kiosk hide-preview-during-processing · Google Drive (OAuth) + S3 uploads · captive Wi-Fi (AP IP fix, http/https auto-detect, pass-through default).
 
-## Admin
+## Admin / source
 - Admin UI: `http://192.168.86.30:8000/admin` (PIN-gated).
-- Deploy method: `scp` files to `/opt/photobooth` + `sudo systemctl restart <svc>` (no git on the Jetson).
+- Repo: <https://github.com/renjithrp/jetson-photobooth> (public), branch `master`.
+  A dev clone lives on the Jetson at `~/development/jetson-photobooth` — separate from
+  the running install at `/opt/photobooth`, which is not a git checkout.
+- Deploy method: `./deploy/deploy.sh pb@192.168.86.30` from a dev machine (rsync +
+  restart of `photobooth`, `photobooth-gesture`, `photobooth-captive`). Add `-n` for a
+  dry run, `--deps` to also refresh the venv. Runtime dirs (`venv/`, `gesture-venv/`,
+  `data/`, `models/`, `wheels/`, `certs/`) are excluded and survive `--delete`.
