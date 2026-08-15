@@ -51,7 +51,7 @@ Kiosk fullscreen (wmctrl) · gesture worker + distance tuning · gaze scaffold �
 
 ## Admin / source
 - Admin UI: `http://192.168.86.30:8000/admin` (PIN-gated).
-- Repo: <https://github.com/renjithrp/jetson-photobooth> (public), branch `master`.
+- Repo: <https://github.com/renjithrp/jetson-photobooth> (public), branch `main`.
   A dev clone lives on the Jetson at `~/development/jetson-photobooth` — separate from
   the running install at `/opt/photobooth`, which is not a git checkout.
 - Deploy method: `./deploy/deploy.sh pb@192.168.86.30` from a dev machine (rsync +
