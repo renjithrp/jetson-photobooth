@@ -75,8 +75,22 @@ def _detect_backend() -> str:
     return "http://127.0.0.1:8000"  # default; the reader loop will keep retrying
 
 
-def _load_trigger() -> SimpleNamespace | None:
-    """Read the trigger settings block as an attribute holder (what gestures.py wants)."""
+def _load_trigger(base: str = "") -> SimpleNamespace | None:
+    """Read the trigger settings block as an attribute holder (what gestures.py wants).
+
+    Prefer the backend API: this worker runs as `pb` but the backend runs as root
+    and writes settings.json mode 600, so a direct file read fails with
+    PermissionError — which silently pinned the worker to its default gesture,
+    ignoring whatever was configured in admin. The API's /api/settings is
+    unauthenticated on loopback and its `trigger` block carries no secrets. Fall
+    back to the file only if the backend is unreachable."""
+    if base:
+        try:
+            with _opener(base + "/api/settings", timeout=3) as r:
+                data = json.loads(r.read().decode())
+            return SimpleNamespace(**data.get("trigger", {}))
+        except Exception:
+            pass
     try:
         with open(SETTINGS_PATH) as f:
             data = json.load(f)
@@ -88,7 +102,7 @@ def _load_trigger() -> SimpleNamespace | None:
 class GestureWorker:
     def __init__(self) -> None:
         self.base = _detect_backend()
-        self.trigger = _load_trigger() or SimpleNamespace()
+        self.trigger = _load_trigger(self.base) or SimpleNamespace()
         self._settings_read = 0.0
         # 0.6/0.5 balances the two failure modes seen at the booth: 0.8/0.6 missed
         # small far-away hands in the low-res (1024x680) live view, while 0.5/0.5
@@ -112,7 +126,7 @@ class GestureWorker:
         if now - self._settings_read < 3.0:
             return
         self._settings_read = now
-        t = _load_trigger()
+        t = _load_trigger(self.base)
         if t is not None:
             self.trigger = t
 
