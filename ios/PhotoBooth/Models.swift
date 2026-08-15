@@ -1,0 +1,47 @@
+import Foundation
+
+/// Decodable mirrors of the JSON the booth returns. Only the fields the app uses
+/// are declared; the backend may send more.
+
+struct SystemInfo: Decodable {
+    let busy: Bool
+    let daemon_connected: Bool?
+    struct Stream: Decodable { let streaming: Bool?; let fps: Double? }
+    let camera_stream: Stream?
+    let booth: String?          // not sent by backend; kept optional for future use
+}
+
+struct ShareOptions: Decodable {
+    var email = false
+    var links = false
+    var whatsapp = false
+    var drive_optin = false
+}
+
+struct FindResult: Decodable {
+    let matched: Bool
+    let photos: [String]?
+    let error: String?
+}
+
+struct OptinResult: Decodable {
+    let ok: Bool
+    var added: Int? = nil
+    var total: Int? = nil
+    let error: String?
+}
+
+struct PendingRecipient: Decodable, Identifiable {
+    let phone: String
+    let raw: String
+    let count: Int
+    let photos: [String]
+    let wa_link: String
+    let download_url: String
+    var id: String { phone }
+}
+
+struct PendingResponse: Decodable {
+    let pending: [PendingRecipient]
+    let count: Int
+}

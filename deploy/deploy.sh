@@ -36,7 +36,7 @@ echo "== rsync -> $HOST:$APP =="
 rsync -az --delete ${DRY[@]+"${DRY[@]}"} \
   --exclude 'venv/' --exclude 'gesture-venv/' --exclude '.venv/' \
   --exclude 'data/' --exclude 'models/' --exclude 'wheels/' --exclude 'certs/' \
-  --exclude '.git/' --exclude '.claude/' \
+  --exclude '.git/' --exclude '.claude/' --exclude 'ios/' \
   --exclude '__pycache__/' --exclude '*.pyc' --exclude '.pytest_cache/' \
   ./ "$HOST:$APP/"
 
