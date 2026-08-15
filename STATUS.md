@@ -52,7 +52,8 @@ dialogs never appear on the kiosk. Trigger: one-off cameraDaemon SIGSEGV in its
 `Connect_TimeOut` path (auto-recovered); core dump archived at `~/crash-archive/`.
 · Wave-twice gesture (`wave`) added. · `camera-usb-kick` boot service resets the Type-C
 controller when the Sony is missing from USB after a reboot (stale PC-Remote session).
-· Full multi-agent code review → fixed critical/high + medium findings and deployed:
+· Full multi-agent code review → fixed critical/high + medium + low findings and deployed
+  (3 commits on `main`, pushed to GitHub):
   - **watchdog** now restarts the real `photobooth-camera` unit and checks the result
     (was a silent no-op against a nonexistent `photobooth-liveview`).
   - **captive proxy** restricted to a guest-route allowlist — the hotspot no longer
@@ -64,6 +65,17 @@ controller when the Sony is missing from USB after a reboot (stale PC-Remote ses
     **SyncWorker** snapshots-then-merges (no more mid-upload dict race); numeric settings
     bounds-checked; leaked camera-daemon sockets closed; admin face-zone preview stream
     now stops on tab-switch.
+  - low tier: strong refs on fire-and-forget capture/print tasks; FTP connection closed
+    in `finally`; live preview skips byte-identical frames (+ removed 3 dead liveview fns);
+    `_prune` now also clears a session's thumbnails + face-index entries (no more matches
+    to deleted 404s); trigger `stop()` joins threads (fixes webcam "camera in use" restart
+    race); `timer.interval_seconds` wired as the real between-shots gap; `_email_last` map
+    bounded; native shutdown busy-spin → yielding sleep (source only — needs an on-device
+    CrSDK rebuild); control/guest/kiosk UI: direct-download gallery, kiosk preview reconnects
+    on clean stream-end, guest re-fetches share options per find; misleading no-op admin
+    knobs removed (Sony transfer size, keep-local).
+  - Test suite 70 green on-device. NOTE: not yet verified with a real Sony capture through
+    the rewritten pipeline; native busy-spin fix awaits a `boothCapture`/daemon rebuild.
 
 ## Key changes (2026-07-08 session)
 Kiosk fullscreen (wmctrl) · gesture worker + distance tuning · gaze scaffold · OOM fix (zram+swap) · jetson_clocks · 1080p render + drop TensorRT EP · fix intermittent numpy/cv2 face-grouping race · kiosk hide-preview-during-processing · Google Drive (OAuth) + S3 uploads · captive Wi-Fi (AP IP fix, http/https auto-detect, pass-through default).
