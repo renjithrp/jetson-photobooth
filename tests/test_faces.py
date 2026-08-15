@@ -45,3 +45,25 @@ def test_multiple_faces_in_one_photo():
     idx = fresh()
     idx.add_faces("s1", "/captures/s1/group.jpg", [unit(1, 0, 0), unit(0, 1, 0)], 0.45)
     assert idx.stats() == {"people": 2, "faces": 2}
+
+
+def test_remove_session_drops_faces_and_empty_clusters():
+    # A pruned session's photos must stop appearing in matches (else guests match
+    # to deleted 404s). Removing a session that owned a whole cluster drops it.
+    idx = fresh()
+    idx.add_faces("old", "/captures/old/p.jpg", [unit(1, 0, 0)], 0.45)
+    idx.add_faces("keep", "/captures/keep/p.jpg", [unit(0, 1, 0)], 0.45)
+    assert idx.stats() == {"people": 2, "faces": 2}
+    idx.remove_session("old")
+    assert idx.stats() == {"people": 1, "faces": 1}
+    # the removed session's person no longer matches; the kept one still does
+    assert idx.match(unit(1, 0, 0), 0.45)["matched"] is False
+    m = idx.match(unit(0, 1, 0), 0.45)
+    assert m["matched"] and "/captures/keep/p.jpg" in m["photos"]
+
+
+def test_remove_session_noop_when_absent():
+    idx = fresh()
+    idx.add_faces("s1", "/captures/s1/p.jpg", [unit(1, 0, 0)], 0.45)
+    idx.remove_session("does-not-exist")
+    assert idx.stats() == {"people": 1, "faces": 1}

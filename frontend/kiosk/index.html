@@ -251,8 +251,20 @@ function connectWS(){
   ws.onclose = () => setTimeout(connectWS, 1500);
 }
 
-// if the MJPEG stream ever drops, reconnect it after a short delay
-L("preview").onerror = () => setTimeout(setPreview, 1500);
+// Reconnect the MJPEG preview whenever it drops. A hard failure fires `error`,
+// but a stream that ENDS cleanly (backend still up) fires `load` instead — for
+// multipart/x-mixed-replace Chromium only fires `load` at stream end, not per
+// frame — so handle both. Debounced so a server that immediately closes the
+// connection can't spin a tight reconnect loop.
+let _lastPreviewKick = 0;
+function kickPreview(){
+  const now = Date.now();
+  if (now - _lastPreviewKick < 1400) return;
+  _lastPreviewKick = now;
+  setPreview();
+}
+L("preview").onerror = () => setTimeout(kickPreview, 1500);
+L("preview").onload  = () => setTimeout(kickPreview, 1500);
 
 loadInfo(); loadWifi(); connectWS(); scheduleAttract();
 setInterval(loadInfo, 30000);

@@ -133,8 +133,9 @@ def s3_upload_one(f: Path, c: S3Destination, subdir: str = "") -> dict:
 
 # ---- FTP / FTPS -----------------------------------------------------------
 def ftp_upload(files: list[Path], c: FTPDestination) -> dict:
+    ftp: FTP | None = None
     try:
-        ftp: FTP = FTP_TLS() if c.use_tls else FTP()
+        ftp = FTP_TLS() if c.use_tls else FTP()
         ftp.connect(c.host, c.port, timeout=30)
         ftp.login(c.username, c.password)
         if c.use_tls and isinstance(ftp, FTP_TLS):
@@ -149,10 +150,20 @@ def ftp_upload(files: list[Path], c: FTPDestination) -> dict:
         for f in files:
             with open(f, "rb") as fh:
                 ftp.storbinary(f"STOR {f.name}", fh)
-        ftp.quit()
+        ftp.quit()          # graceful close on success
+        ftp = None          # quit() already released the connection
         return {"ok": True, "count": len(files), "dir": c.remote_dir}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    finally:
+        # Always release the socket — otherwise a mid-transfer error against a wedged
+        # server leaks the control/data connection until GC, and the retrying sync
+        # worker piles them up.
+        if ftp is not None:
+            try:
+                ftp.close()
+            except Exception:
+                pass
 
 
 # ---- dispatch (shared by the inline path and the background sync worker) ---

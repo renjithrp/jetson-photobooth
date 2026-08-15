@@ -67,7 +67,10 @@ class TimerSettings(BaseModel):
 
 class CameraSettings(BaseModel):
     backend: Literal["mock", "sony", "webcam"] = "mock"
-    transfer_size: Literal["small", "original"] = "small"   # Sony PC-save size
+    # NOTE: the Sony PC-save size is fixed inside the native boothCapture binary, so
+    # these two are vestigial (kept for settings.json compatibility, not wired to
+    # anything). They were removed from the admin UI to stop implying they do something.
+    transfer_size: Literal["small", "original"] = "small"
     save_subdir_by_date: bool = True
     # Sony CrSDK helper binary on the Jetson (captures + downloads to output_dir).
     # capture_output_dir MUST match the camera daemon's BOOTH_CAPTURE_DIR (where the
@@ -128,7 +131,7 @@ class FTPDestination(BaseModel):
 
 class StorageSettings(BaseModel):
     local_dir: str = "captures"           # relative to data dir, or absolute
-    keep_local: bool = True
+    keep_local: bool = True               # vestigial (not wired; removed from admin UI)
     max_local_sessions: int = 0           # 0 = unlimited, else prune oldest
     # Background sync: queue uploads to a durable worker (retry/backoff, survives reboot &
     # offline) instead of blocking the capture. Turn off for legacy inline uploads.

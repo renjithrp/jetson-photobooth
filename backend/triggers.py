@@ -224,6 +224,15 @@ class TriggerManager:
     def stop(self) -> None:
         for t in self._threads:
             t.stop()
+        # Join before returning so a trigger's held resource (webcam VideoCapture,
+        # serial port) is released before restart() reopens it — otherwise the new
+        # GestureTrigger's cv2.VideoCapture fails "camera in use" and gesture stays
+        # dead until the next settings save.
+        for t in self._threads:
+            try:
+                t.join(timeout=2.0)
+            except Exception:
+                pass
         self._threads = []
 
     def restart(self, settings: Settings, skip_gesture: bool = False) -> None:

@@ -780,7 +780,8 @@ Error:
     }
     if(serverThread) {
         svr.stop();
-        while(running);
+        // yield instead of a busy-spin (which pinned a core at 100% during shutdown)
+        while(running) std::this_thread::sleep_for(std::chrono::milliseconds(10));
         serverThread->join();
     }
     if(enumCameraObjectInfo) enumCameraObjectInfo->Release();

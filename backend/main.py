@@ -376,11 +376,16 @@ async def put_settings(partial: dict, _: None = Depends(require_auth)) -> dict:
 
 
 # ---- capture / preview ----------------------------------------------------
+_bg_tasks: set[asyncio.Task] = set()   # strong refs so the loop can't GC-cancel these
+
+
 @app.post("/api/capture")
 async def manual_capture() -> dict:
     if service.busy:
         return {"ok": False, "reason": "busy"}
-    asyncio.create_task(service.run_session("manual"))
+    task = asyncio.create_task(service.run_session("manual"))
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
     return {"ok": True}
 
 
@@ -545,7 +550,11 @@ async def share_email(body: dict, request: Request) -> dict:
     res = await loop.run_in_executor(
         None, lambda: share.send_email(str(body.get("to", "")).strip(), files, s))
     if res.get("ok"):
-        _email_last[ip] = time.time()
+        now = time.time()
+        if len(_email_last) > 1000:      # bound the map: drop entries past the 15s window
+            for k in [k for k, t in _email_last.items() if now - t > 15]:
+                _email_last.pop(k, None)
+        _email_last[ip] = now
     return res
 
 

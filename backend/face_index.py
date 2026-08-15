@@ -84,6 +84,19 @@ class FaceIndex:
                 self.faces.append({"session": session, "url": url, "cluster": cid})
             self._save()
 
+    def remove_session(self, session: str) -> None:
+        """Drop a pruned session's faces (and any clusters left with none), so
+        match()/groups() stop returning URLs to photos that were deleted."""
+        with self._lock:
+            before = len(self.faces)
+            self.faces = [f for f in self.faces if f.get("session") != session]
+            if len(self.faces) == before:
+                return
+            live = {f["cluster"] for f in self.faces}
+            self.clusters = [c for c in self.clusters if c["id"] in live]
+            self._cmat = None
+            self._save()
+
     def groups(self) -> list[dict]:
         with self._lock:
             by: dict[int, list[str]] = {}

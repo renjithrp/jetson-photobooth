@@ -270,8 +270,6 @@
       <div class="grid2">
         <div><label class="fld">Backend</label><select data-path="camera.backend">
           <option>mock</option><option>sony</option><option>webcam</option></select></div>
-        <div><label class="fld">Transfer size (Sony)</label><select data-path="camera.transfer_size">
-          <option>small</option><option>original</option></select></div>
       </div>
       <div class="grid2 mt-1">
         <div><label class="fld">Capture binary</label><input type="text" data-path="camera.capture_binary"></div>
@@ -302,8 +300,6 @@
         <div><label class="fld">Local folder</label><input type="text" data-path="storage.local_dir"></div>
         <div><label class="fld">Max sessions kept (0 = ∞)</label><input type="number" data-path="storage.max_local_sessions"></div>
       </div>
-      <div class="toggle mt-1"><div class="t-txt">Keep local copies</div>
-        <label class="sw"><input type="checkbox" data-path="storage.keep_local"><i></i></label></div>
     </div>
     <div class="card"><h2><svg class="ic"><use href="#i-cloud"/></svg> Google Drive
       <button class="btn btn-ghost btn-xs ml-auto" onclick="testGdrive()">Test</button></h2>

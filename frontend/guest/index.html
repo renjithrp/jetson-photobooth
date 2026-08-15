@@ -135,6 +135,9 @@ L("selfie").onchange = async () => {
   const fd = new FormData();
   fd.append("selfie", f);
   try {
+    // Refresh share options each find: a guest keeps this captive page open, so
+    // if staff enable email/links mid-event the buttons must appear without a reload.
+    try { OPTS = await (await fetch("/api/share/options")).json(); } catch (e) {}
     const r = await (await fetch("/api/faces/find", { method: "POST", body: fd })).json();
     if (r.matched && r.photos && r.photos.length) {
       hint("");

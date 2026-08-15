@@ -238,9 +238,11 @@ async function loadGallery(openView){
   if(openView){
     L("galleryTitle").textContent = "Gallery";
     const grid = L("galleryGrid");
-    const flat = items.flatMap(it => (it.images||[]).map(u => ({u, share:it.share_url})));
+    // /api/gallery returns {session, images} — no share_url — so download the image
+    // directly (a share-page URL here just opened an HTML page, not a download).
+    const flat = items.flatMap(it => it.images || []);
     grid.innerHTML = flat.length
-      ? flat.map(p => `<img src="${thumbUrl(p.u)}" loading="lazy" data-full="${p.u}" data-share="${p.share||''}">`).join("")
+      ? flat.map(u => `<img src="${thumbUrl(u)}" loading="lazy" data-full="${u}">`).join("")
       : `<div class="empty">No photos yet.<br>Tap the shutter to take one.</div>`;
     showOverlay("galleryView");
   }
@@ -249,7 +251,7 @@ L("galleryBtn").onclick = () => loadGallery(true);
 L("galleryBack").onclick = () => hideOverlay("galleryView");
 L("galleryGrid").addEventListener("click", e => {
   const img = e.target.closest("img"); if(!img) return;
-  openPhoto(img.dataset.full, null, img.dataset.share || img.dataset.full);
+  openPhoto(img.dataset.full, null, img.dataset.full);
 });
 
 /* ---------- single photo viewer ---------- */

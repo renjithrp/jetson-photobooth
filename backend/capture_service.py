@@ -22,6 +22,10 @@ class CaptureService:
         self.base_url = base_url_provider
         self.last_finals: list = []      # most recent session outputs (for reprint)
         self.last_shots: list = []
+        # Strong refs to in-flight background tasks. The event loop only holds WEAK
+        # references to tasks, so without this a capture/print task can be garbage-
+        # collected (and cancelled) mid-await. discard-on-done keeps the set bounded.
+        self._tasks: set[asyncio.Task] = set()
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -30,12 +34,17 @@ class CaptureService:
     def busy(self) -> bool:
         return self._busy.locked()
 
+    def _spawn(self, coro) -> None:
+        task = asyncio.create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
     # ---- entry points -----------------------------------------------------
     def trigger_threadsafe(self, source: str = "manual") -> None:
         """Callable from GPIO/gesture background threads."""
         if self._loop is None:
             return
-        self._loop.call_soon_threadsafe(lambda: asyncio.create_task(self.run_session(source)))
+        self._loop.call_soon_threadsafe(lambda: self._spawn(self.run_session(source)))
 
     async def run_session(self, source: str = "manual") -> None:
         if self._busy.locked():
@@ -202,7 +211,7 @@ class CaptureService:
         """Reprint the last session — called from the Arduino PRINT button thread."""
         if self._loop is None:
             return
-        self._loop.call_soon_threadsafe(lambda: asyncio.create_task(self._print_last()))
+        self._loop.call_soon_threadsafe(lambda: self._spawn(self._print_last()))
 
     async def _print_last(self) -> None:
         s = config.load()
@@ -230,5 +239,14 @@ class CaptureService:
         sessions = sorted([d for d in root.iterdir() if d.is_dir()],
                           key=lambda d: d.stat().st_mtime)
         import shutil
+        from . import share
+        from .face_index import index as face_index
         for d in sessions[:-limit]:
             shutil.rmtree(d, ignore_errors=True)
+            # also drop the session's thumbnails and face-index entries, or guests
+            # keep "matching" to photos that no longer exist (404s).
+            try:
+                share.remove_session_thumbs(d.name)
+                face_index.remove_session(d.name)
+            except Exception as e:
+                print(f"[prune] cleanup for {d.name} failed: {e}")

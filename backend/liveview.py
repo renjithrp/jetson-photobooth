@@ -102,15 +102,21 @@ async def stream(request, produce, fps: int = 15, closer=None):
     boundary = b"--frame"
     delay = 1.0 / max(1, fps)
     loop = asyncio.get_event_loop()
+    last = None
     try:
         while True:
             if await request.is_disconnected():
                 break
             frame = await loop.run_in_executor(None, produce)
-            if frame:
+            # Skip re-sending a byte-identical frame: when the Sony hub stalls it
+            # hands back the same buffer object every tick, and re-yielding it just
+            # makes software-rendering Chromium re-decode an unchanged image at fps.
+            # Mock/webcam produce a fresh buffer each call, so they always send.
+            if frame is not None and frame is not last:
                 yield (boundary + b"\r\nContent-Type: image/jpeg\r\n"
                        + f"Content-Length: {len(frame)}\r\n\r\n".encode()
                        + frame + b"\r\n")
+                last = frame
             await asyncio.sleep(delay)
     finally:
         if closer:
@@ -118,49 +124,3 @@ async def stream(request, produce, fps: int = 15, closer=None):
                 closer()
             except Exception:
                 pass
-
-
-def buffer_mjpeg(get_frame, fps: int = 15):
-    """Serve MJPEG from a callable returning the latest JPEG bytes (the Sony hub).
-    Same-origin via the backend; no upstream connection per client."""
-    boundary = b"--frame"
-    delay = 1.0 / max(1, fps)
-    while True:
-        frame = get_frame()
-        if frame:
-            yield (boundary + b"\r\nContent-Type: image/jpeg\r\n"
-                   + f"Content-Length: {len(frame)}\r\n\r\n".encode()
-                   + frame + b"\r\n")
-        time.sleep(delay)
-
-
-def proxy_mjpeg(url: str):
-    """Transparently pipe an upstream MJPEG stream (the Sony CrSDK live-view server)
-    straight through to the browser, lowest latency, no re-encode."""
-    import urllib.request
-    resp = urllib.request.urlopen(url, timeout=10)
-    try:
-        while True:
-            chunk = resp.read(16384)
-            if not chunk:
-                break
-            yield chunk
-    finally:
-        resp.close()
-
-
-def mjpeg_stream(settings: Settings):
-    """Generator yielding multipart/x-mixed-replace JPEG frames."""
-    source = make_source(settings)
-    boundary = b"--frame"
-    delay = 1.0 / max(1, settings.preview.fps)
-    try:
-        while True:
-            frame = source.read_jpeg()
-            if frame:
-                yield (boundary + b"\r\nContent-Type: image/jpeg\r\n"
-                       + f"Content-Length: {len(frame)}\r\n\r\n".encode()
-                       + frame + b"\r\n")
-            time.sleep(delay)
-    finally:
-        source.close()

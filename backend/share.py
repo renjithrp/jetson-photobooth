@@ -69,6 +69,15 @@ def thumbs_dir() -> Path:
     return d
 
 
+def remove_session_thumbs(session: str) -> None:
+    """Delete the cached thumbnails for a pruned session (they mirror the captures
+    layout under data/thumbs/<session>/)."""
+    import shutil
+    d = thumbs_dir() / session
+    if d.is_dir():
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def thumb_for(url_path: str) -> Path | None:
     """Return (creating on first use) the cached thumbnail for a captures URL.
     Thumbs mirror the captures layout under data/thumbs/ and regenerate when the

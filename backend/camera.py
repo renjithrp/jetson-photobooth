@@ -162,7 +162,10 @@ def daemon_capture(settings: Settings, dest_dir: Path, count: int,
     outdir.mkdir(parents=True, exist_ok=True)
     base = (settings.preview.sony_http_url or "http://127.0.0.1:8080/").rstrip("/")
     out: list[Path] = []
+    interval = settings.timer.interval_seconds
     for i in range(count):
+        if i > 0 and interval > 0:      # honour the configured gap between multi-shots
+            time.sleep(interval)
         if on_shot:
             on_shot(i + 1)
         before = {p.name for p in outdir.iterdir() if p.is_file()}
