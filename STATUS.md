@@ -1,6 +1,6 @@
 # PhotoBooth — Current Deployment Specs & State
 
-Snapshot as of **2026-07-08**. Live booth: `pb@192.168.86.250` (LAN), app at `/opt/photobooth`.
+Snapshot as of **2026-07-08**. Live booth: `pb@192.168.86.30` (LAN), app at `/opt/photobooth`.
 
 ## Hardware / Platform
 | | |
@@ -36,7 +36,7 @@ Snapshot as of **2026-07-08**. Live booth: `pb@192.168.86.250` (LAN), app at `/o
 ## Network
 | Role | Interface | Details |
 |---|---|---|
-| Management / SSH / internet | `wlP1p1s0` (onboard) | LAN "Virus-5G", `192.168.86.250/24` — **never used for the AP** |
+| Management / SSH / internet | `wlP1p1s0` (onboard) | LAN "Virus-5G", `192.168.86.30/24` — **never used for the AP** |
 | Guest hotspot (AP) | `wlx782051871b2c` (USB dongle) | SSID **PhotoBooth** / pass **booth1234**, `192.168.50.1/24`, 2.4 GHz, visible |
 | Captive portal | — | `:80` reverse-proxy, **pass-through mode** (guests keep internet; reach photos by scanning the on-screen QR → opens in real browser). `share.base_url = http://192.168.50.1` |
 
@@ -50,5 +50,5 @@ Snapshot as of **2026-07-08**. Live booth: `pb@192.168.86.250` (LAN), app at `/o
 Kiosk fullscreen (wmctrl) · gesture worker + distance tuning · gaze scaffold · OOM fix (zram+swap) · jetson_clocks · 1080p render + drop TensorRT EP · fix intermittent numpy/cv2 face-grouping race · kiosk hide-preview-during-processing · Google Drive (OAuth) + S3 uploads · captive Wi-Fi (AP IP fix, http/https auto-detect, pass-through default).
 
 ## Admin
-- Admin UI: `http://192.168.86.250:8000/admin` (PIN-gated).
+- Admin UI: `http://192.168.86.30:8000/admin` (PIN-gated).
 - Deploy method: `scp` files to `/opt/photobooth` + `sudo systemctl restart <svc>` (no git on the Jetson).
