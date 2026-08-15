@@ -158,3 +158,11 @@ The suite uses a temp data dir and the mock camera, so it runs anywhere (no hard
 - ⏳ Sony full-frame USB transfer stability (use small size / verify cable/port).
 - ⏳ Gaze correction — measure-only scaffold in place; redirection model TODO.
 - ⏳ AI background segmentation (rembg hook in `processing.apply_ai`) — currently off.
+
+## License
+
+[MIT](LICENSE) © Renjith Rajan.
+
+Third-party components keep their own licences — notably Sony's **Camera Remote SDK**
+(proprietary; not redistributed here, install it yourself at `/opt/CrSDK`) and
+InsightFace model weights, whose `buffalo_l` pack is for **non-commercial use**.
