@@ -413,6 +413,15 @@
       <div class="mt-2"><label class="fld">Public base URL (blank = auto)</label><input type="text" data-path="share.base_url"></div>
     </div>
 
+    <div class="card"><h2><svg class="ic"><use href="#i-link"/></svg> WhatsApp send queue
+      <button class="btn btn-ghost btn-xs ml-auto" onclick="loadWhatsapp()">↻ Refresh</button></h2>
+      <p class="sub">Guests who left a number for their photos. Send when the booth is online, then mark
+        them sent — photos are never queued to the same number twice.
+        <b>Note:</b> the message carries a link to the photos, so set a reachable <i>Public base URL</i>
+        above (or connect Google Drive) for guests to open it after they leave the booth Wi-Fi.</p>
+      <div id="waQueue" class="mt-2"></div>
+    </div>
+
     <div class="card"><h2><svg class="ic"><use href="#i-mail"/></svg> Email photos to guests
       <button class="btn btn-ghost btn-xs ml-auto" onclick="testEmail()">Send test</button></h2>
       <p class="sub">Guests on the find-your-photos page can email themselves their selected
@@ -654,7 +663,7 @@ function showTab(name){
   try{ localStorage.setItem("booth_tab", name); }catch(e){}
   if(name==="trigger") startZonePreview(); else stopZonePreview();
   if(name==="network"){ loadNet(); }
-  if(name==="sharing"){ loadSync(); loadPrinters(); refreshGdriveStatus(); }
+  if(name==="sharing"){ loadSync(); loadPrinters(); refreshGdriveStatus(); loadWhatsapp(); }
   window.scrollTo({top:0,behavior:"instant"});
 }
 
@@ -932,6 +941,35 @@ async function loadSync(){
   $("#syncStatus").innerHTML = html;
 }
 async function retrySync(){ await fetch("/api/sync/retry",{method:"POST"}); toast("Retrying queued uploads…"); setTimeout(loadSync,1000); }
+
+/* ---- WhatsApp send queue ---- */
+async function loadWhatsapp(){
+  const el = $("#waQueue"); if(!el) return;
+  let j;
+  try{
+    const r = await fetch("/api/consent/whatsapp/pending");
+    if(r.status===401){ $("#gate").style.display="flex"; return; }
+    j = await r.json();
+  }catch(e){ el.innerHTML = `<div class="text-sm text-slate-500">Couldn't load the queue.</div>`; return; }
+  if(!j.count){ el.innerHTML = `<div class="text-sm text-slate-500">No one waiting to be sent.</div>`; return; }
+  el.innerHTML = j.pending.map(r=>`
+    <div class="flex items-center justify-between gap-2 py-2 border-b border-slate-100">
+      <div class="text-sm"><b>+${r.phone}</b> · ${r.count} photo${r.count>1?"s":""}</div>
+      <div class="flex gap-2">
+        <a class="btn btn-xs" href="${r.wa_link}" target="_blank" rel="noopener">Open WhatsApp</a>
+        <button class="btn btn-ghost btn-xs" onclick="markWaSent('${r.phone}')">Mark sent</button>
+      </div>
+    </div>`).join("");
+}
+async function markWaSent(phone){
+  if(!confirm("Mark +"+phone+" as sent? Their photos won't be queued again.")) return;
+  try{
+    const r = await (await fetch("/api/consent/whatsapp/sent",{method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({phone})})).json();
+    toast(r.ok ? `Marked sent (${r.marked})` : ("Failed: "+(r.error||"")), !r.ok);
+  }catch(e){ toast("Request failed", true); }
+  loadWhatsapp();
+}
 
 /* ---- printing ---- */
 async function loadPrinters(){
