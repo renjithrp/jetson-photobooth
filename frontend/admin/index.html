@@ -956,10 +956,21 @@ async function loadWhatsapp(){
     <div class="flex items-center justify-between gap-2 py-2 border-b border-slate-100">
       <div class="text-sm"><b>+${r.phone}</b> · ${r.count} photo${r.count>1?"s":""}</div>
       <div class="flex gap-2">
-        <a class="btn btn-xs" href="${r.wa_link}" target="_blank" rel="noopener">Open WhatsApp</a>
+        <button class="btn btn-xs" onclick="waPrepare('${r.phone}')">Send with cloud links</button>
+        <a class="btn btn-ghost btn-xs" href="${r.wa_link}" target="_blank" rel="noopener"
+           title="Message carries a booth-network link — use for guests still on the booth Wi-Fi">Local link</a>
         <button class="btn btn-ghost btn-xs" onclick="markWaSent('${r.phone}')">Mark sent</button>
       </div>
     </div>`).join("");
+}
+async function waPrepare(phone){
+  toast("Uploading photos and building links…");
+  try{
+    const r = await (await fetch("/api/consent/whatsapp/prepare",{method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({phone})})).json();
+    if(r.ok){ toast(`Links ready (${r.count}) — opening WhatsApp`); window.open(r.wa_link, "_blank"); }
+    else toast("Failed: "+(r.error||""), true);
+  }catch(e){ toast("Request failed", true); }
 }
 async function markWaSent(phone){
   if(!confirm("Mark +"+phone+" as sent? Their photos won't be queued again.")) return;

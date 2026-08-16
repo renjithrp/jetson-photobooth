@@ -114,6 +114,18 @@ def test_whatsapp_optin_collect_and_admin_flow(admin):
     assert admin.get("/api/consent/whatsapp/pending").json()["count"] == 0
 
 
+def test_whatsapp_prepare_requires_public_store(admin):
+    admin.put("/api/settings", json={"share": {"whatsapp_optin": True}})
+    urls = _make_session("session_prep", 1)
+    admin.post("/api/share/whatsapp", json={"phone": "+15550107070", "photos": urls})
+    # unknown recipient
+    r = admin.post("/api/consent/whatsapp/prepare", json={"phone": "+19990000000"}).json()
+    assert r["ok"] is False
+    # known recipient but no S3/Drive configured -> clear error, no crash
+    r = admin.post("/api/consent/whatsapp/prepare", json={"phone": "+15550107070"}).json()
+    assert r["ok"] is False and r["error"]
+
+
 def test_whatsapp_optin_refused_when_disabled(admin):
     admin.put("/api/settings", json={"share": {"whatsapp_optin": False}})
     urls = _make_session("session_wa2", 1)

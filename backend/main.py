@@ -640,6 +640,32 @@ async def whatsapp_pending(_: None = Depends(require_auth)) -> dict:
     return {"pending": out, "count": len(out)}
 
 
+@app.post("/api/consent/whatsapp/prepare")
+async def whatsapp_prepare(body: dict, _: None = Depends(require_auth)) -> dict:
+    """Admin: upload a recipient's pending photos to the enabled public store
+    (S3 / Google Drive) and return a wa.me link whose message carries the PUBLIC
+    URLs — deliverable after the guest leaves the booth Wi-Fi. Uploads are
+    deterministic per photo (same key/name), so re-preparing or group overlaps
+    don't create duplicates in the store."""
+    phone = consent.normalize_phone(str(body.get("phone", "")))
+    rec = next((r for r in consent.store.whatsapp_pending() if r["phone"] == phone), None)
+    if not rec:
+        return {"ok": False, "error": "unknown recipient or nothing pending"}
+    s = config.load()
+    files = share.resolve_photos(rec["photos"])
+    if not files:
+        return {"ok": False, "error": "photos no longer exist"}
+    loop = asyncio.get_running_loop()
+    res = await loop.run_in_executor(None, lambda: share.public_links(files, s))
+    if not res.get("ok") or not res.get("links"):
+        return {"ok": False, "error": res.get("error")
+                or "no public store enabled — connect Google Drive or S3 in Sharing"}
+    text = urllib.parse.quote(
+        f"Hi! Here are your photos from {s.general.booth_name}:\n" + "\n".join(res["links"]))
+    return {"ok": True, "links": res["links"], "count": len(res["links"]),
+            "wa_link": f"https://wa.me/{phone}?text={text}"}
+
+
 @app.post("/api/consent/whatsapp/sent")
 async def whatsapp_sent(body: dict, _: None = Depends(require_auth)) -> dict:
     """Admin: mark a recipient's photos delivered so they're never queued again."""
