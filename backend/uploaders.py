@@ -76,6 +76,32 @@ def gdrive_upload(files: list[Path], g: GDriveDestination, subdir: str = "") -> 
         os.unlink(conf)
 
 
+def gdrive_upload_folder_link(files: list[Path], g: GDriveDestination, subdir: str) -> dict:
+    """Upload files into <folder>/<subdir> on Drive and return ONE share link for the
+    whole subfolder — a single tap for the guest instead of a link per photo.
+    Re-running for the same subdir is idempotent: rclone skips unchanged files and
+    the folder link stays the same."""
+    if not _have_rclone():
+        return {"ok": False, "error": "rclone not installed"}
+    if not g.token:
+        return {"ok": False, "error": "Google Drive not connected — click Connect in the admin panel"}
+    conf = _gdrive_conf(g)
+    dest = f"{g.rclone_remote}:{g.folder}/{subdir.strip('/')}"
+    try:
+        for f in files:
+            _rclone(conf, ["copy", str(f), dest], check=True, timeout=120)
+        r = _rclone(conf, ["link", dest], check=False, timeout=60)
+        if r.returncode == 0 and r.stdout.strip():
+            return {"ok": True, "link": r.stdout.strip().splitlines()[-1], "dest": dest}
+        return {"ok": False, "error": (r.stderr or "couldn't create the folder link").strip()}
+    except subprocess.CalledProcessError as e:
+        return {"ok": False, "error": (e.stderr or str(e)).strip()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    finally:
+        os.unlink(conf)
+
+
 # ---- Amazon S3 (and S3-compatible) ----------------------------------------
 def _s3_conf(c: S3Destination) -> str:
     ini = [f"[{_S3_REMOTE}]", "type = s3",

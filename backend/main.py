@@ -656,6 +656,23 @@ async def whatsapp_prepare(body: dict, _: None = Depends(require_auth)) -> dict:
     if not files:
         return {"ok": False, "error": "photos no longer exist"}
     loop = asyncio.get_running_loop()
+
+    # Preferred: ONE Drive folder link per guest (their photos in guests/<phone>),
+    # instead of a wall of per-photo links in the WhatsApp message.
+    if s.storage.gdrive.enabled and s.storage.gdrive.token:
+        res = await loop.run_in_executor(None, lambda: uploaders.gdrive_upload_folder_link(
+            files, s.storage.gdrive, subdir=f"guests/{phone}"))
+        if res.get("ok"):
+            n = len(files)
+            text = urllib.parse.quote(
+                f"Hi! Here are your {n} photo{'s' if n > 1 else ''} from "
+                f"{s.general.booth_name}: {res['link']}")
+            return {"ok": True, "links": [res["link"]], "count": n,
+                    "wa_link": f"https://wa.me/{phone}?text={text}"}
+        log.warning("drive folder link failed (%s); falling back to per-file links",
+                    res.get("error"))
+
+    # Fallback: per-file public links (S3, or Drive folder-link failure).
     res = await loop.run_in_executor(None, lambda: share.public_links(files, s))
     if not res.get("ok") or not res.get("links"):
         return {"ok": False, "error": res.get("error")
