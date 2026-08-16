@@ -46,6 +46,7 @@ struct GuestView: View {
                 if let data { Task { await find(data) } }
             }.ignoresSafeArea()
         }
+        .task { await booth.refresh() }   // pick up newly-enabled share options live
         .idleReturn()
     }
 
