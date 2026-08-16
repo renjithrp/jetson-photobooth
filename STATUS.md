@@ -38,7 +38,7 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
 |---|---|---|
 | Management / SSH / internet | `wlP1p1s0` (onboard) | LAN "Virus-5G", `192.168.86.30/24` — **never used for the AP** |
 | Guest hotspot (AP) | `wlx782051871b2c` (USB dongle) | SSID **PhotoBooth** / pass **booth1234**, `192.168.50.1/24`, 2.4 GHz, visible |
-| Captive portal | — | `:80` reverse-proxy, **pass-through mode** (guests keep internet; reach photos by scanning the on-screen QR → opens in real browser). `share.base_url = http://192.168.50.1` |
+| Captive portal | — | `:80` reverse-proxy, **full DNS hijack** (2026-08-16; `captive-full-hijack.conf`): every domain resolves to the booth so the captive sheet reliably opens on join — probe-only hijack was flaky on iOS (parallel probes escaped via pass-through internet and killed the sheet). Guests have no internet while on booth Wi-Fi (they join to download and leave); kiosk iPad exempted at the HTTP layer. `share.base_url = http://192.168.50.1` |
 
 ## Feature state
 - **Trigger**: gesture, `wave` (open palm swung side-to-side, 3 alternating swings ≈ waving
