@@ -36,7 +36,9 @@ class EventBus:
 
     def publish(self, event: dict) -> None:
         """Thread-safe publish. Remembers the latest 'state' event for new clients."""
-        if event.get("type") not in ("ping",):
+        # gesture = high-frequency overlay telemetry, not a UI state — a client
+        # reconnecting mid-review must get "review" back, not a hand skeleton.
+        if event.get("type") not in ("ping", "gesture"):
             self.last_state = event
         if self._loop is None:
             return

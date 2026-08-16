@@ -116,6 +116,7 @@ class GestureWorker:
         self._last_detected = 0.0
         self._last_fire = 0.0
         self._last_dbg = 0.0
+        self._published_clear = False   # sent one "no hand" state since the hand left
         _log(f"backend={self.base} settings={SETTINGS_PATH}")
         _log(f"gesture={getattr(self.trigger, 'gesture_type', 'open_palm')} "
              f"mode={getattr(self.trigger, 'mode', 'gesture')}")
@@ -242,6 +243,16 @@ class GestureWorker:
 
             hold = float(getattr(t, "gesture_hold_seconds", 1.5))
             cooldown = float(getattr(t, "cooldown_seconds", 5.0))
+            self._step_trigger(detected, gtype, hands_lm, now, t, hold, cooldown)
+            self._publish(gtype, hands_lm, gesture_ok, in_frame, on_face, face_ok,
+                          now, hold, cooldown)
+        except Exception as e:
+            _log(f"detect error: {e}")
+
+    def _step_trigger(self, detected, gtype, hands_lm, now, t, hold, cooldown) -> None:
+        """Hold/cooldown/fire state machine (split from _detect so the overlay
+        state can be published on every path, including the early returns here)."""
+        try:
             if gtype == "wave":
                 # Temporal trigger: no hold — fire the moment the palm finishes
                 # its 3rd alternating swing (~ waving twice). Brief tracking
@@ -275,6 +286,44 @@ class GestureWorker:
                 self._hold_start = None
         except Exception as e:
             _log(f"detect error: {e}")
+
+    def _publish(self, gtype, hands_lm, gesture_ok, in_frame, on_face, face_ok,
+                 now, hold, cooldown) -> None:
+        """Push the detection verdict to the backend, which rebroadcasts it on the
+        kiosk WebSocket bus — that's what the on-video gesture overlay draws. Sent
+        per detection frame while a hand is visible, plus ONE clearing message when
+        the hand leaves (so the overlay fades instead of freezing)."""
+        if not hands_lm:
+            if self._published_clear:
+                return
+            self._published_clear = True
+            state = {"hand": False, "want": gtype}
+        else:
+            self._published_clear = False
+            cd_left = max(0.0, cooldown - (now - self._last_fire)) if self._last_fire else 0.0
+            state = {
+                "hand": True,
+                "want": gtype,
+                "lm": [[round(p.x, 4), round(p.y, 4)] for p in hands_lm[0].landmark],
+                "match": bool(gesture_ok),
+                "in_frame": bool(in_frame),
+                "on_face": bool(on_face),
+                "face_in_zone": face_ok,
+                "hold_need": hold,
+                "hold_progress": round(min(1.0, (now - self._hold_start) / hold), 3)
+                                 if (self._hold_start and hold > 0) else 0.0,
+                "cooldown_left": round(cd_left, 1),
+                "swings": self._wave.swings if gtype == "wave" else None,
+            }
+        try:
+            req = urllib.request.Request(
+                self.base + "/api/gesture/state",
+                data=json.dumps(state).encode(),
+                headers={"Content-Type": "application/json"}, method="POST")
+            ctx = _SSL_UNVERIFIED if self.base.startswith("https") else None
+            urllib.request.urlopen(req, timeout=1.5, context=ctx).close()
+        except Exception:
+            pass  # overlay is best-effort; never let it stall detection
 
     def _fire(self) -> None:
         try:

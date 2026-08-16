@@ -409,6 +409,28 @@ async def manual_focus() -> dict:
         return {"ok": False, "error": str(e)}
 
 
+# ---- gesture detection overlay ------------------------------------------------
+# The isolated gesture worker POSTs its per-frame verdict here (hand landmarks +
+# why it did/didn't fire); we keep the latest and rebroadcast on the WS bus so the
+# kiosk/iPad can draw a live skeleton overlay (trigger.show_gesture_overlay).
+_gesture_state: dict = {"hand": False}
+
+
+@app.post("/api/gesture/state")
+async def gesture_state_update(body: dict, request: Request) -> dict:
+    if request.client and request.client.host not in ("127.0.0.1", "::1"):
+        return {"ok": False}          # loopback publisher (the worker) only
+    global _gesture_state
+    _gesture_state = {**body, "t": time.time()}
+    bus.publish({"type": "gesture", **_gesture_state})
+    return {"ok": True}
+
+
+@app.get("/api/gesture/state")
+async def gesture_state() -> dict:
+    return _gesture_state
+
+
 # Real systemd units the admin UI may control. NOTE: there is deliberately no
 # "photobooth-kiosk" here — the kiosk is a GNOME autostart entry, not a service,
 # so controlling it via systemctl always failed while the UI reported success.

@@ -17,12 +17,16 @@ struct GalleryView: View {
     @State private var showPhone = false
     @State private var phone = ""
     @State private var viewer: ViewerStart?          // photo view (pager) start index
+    @State private var visible = 60                  // pagination: thumbnails shown so far
+    @State private var shareURLs: ShareURLs?         // downloaded files for AirDrop/share
 
     struct ViewerStart: Identifiable { let id: Int }
+    struct ShareURLs: Identifiable { let id = UUID(); let urls: [URL] }
 
     private let cols = [GridItem(.adaptive(minimum: 104), spacing: 6)]
     private var shown: [String] { filter == nil ? all : all.filter { filter!.contains($0) } }
     private var chosen: [String] { shown.filter { selected.contains($0) } }
+    private var page: [String] { Array(shown.prefix(visible)) }
 
     var body: some View {
         NavigationStack {
@@ -37,8 +41,14 @@ struct GalleryView: View {
                 } else {
                     ScrollView {
                         LazyVGrid(columns: cols, spacing: 6) {
-                            ForEach(shown, id: \.self) { u in cell(u) }
+                            ForEach(page, id: \.self) { u in cell(u) }
                         }.padding(6)
+                        // pagination: auto-load the next batch when the sentinel scrolls in
+                        if shown.count > visible {
+                            ProgressView()
+                                .padding(.vertical, 14)
+                                .onAppear { visible += 60 }
+                        }
                     }
                 }
                 if !selected.isEmpty { shareBar }
@@ -76,10 +86,13 @@ struct GalleryView: View {
                     Task { await optWhatsapp() }
                 }
             }
+            .sheet(item: $shareURLs) { s in
+                ShareSheet(items: s.urls)
+            }
             .task { await load() }
         }
         // abandoned gallery returns to the live view; paused while a child screen is up
-        .idleReturn(paused: showCamera || showPhone || viewer != nil)
+        .idleReturn(paused: showCamera || showPhone || viewer != nil || shareURLs != nil)
     }
 
     private func cell(_ u: String) -> some View {
@@ -104,6 +117,8 @@ struct GalleryView: View {
 
     private var shareBar: some View {
         HStack {
+            Button { Task { await airdrop() } } label: { Label("AirDrop", systemImage: "square.and.arrow.up") }
+                .buttonStyle(.bordered)
             Button { download() } label: { Label("Download", systemImage: "square.and.arrow.down") }
                 .buttonStyle(.bordered)
             if booth.options.drive_optin {
@@ -133,6 +148,28 @@ struct GalleryView: View {
             message = r.error ?? "No match — try a clearer, well-lit selfie."
         }
     }
+    /// Download the selected photos full-res to temp files, then present the iOS
+    /// share sheet (AirDrop, Messages, Mail…). File URLs keep the .JPG names so
+    /// AirDrop delivers proper image files.
+    private func airdrop() async {
+        guard !chosen.isEmpty else { return }
+        busy = true; message = "Preparing \(chosen.count) photo(s)…"
+        var files: [URL] = []
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("airdrop", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for p in chosen {
+            guard let (data, resp) = try? await URLSession.shared.data(from: booth.url(p)),
+                  (resp as? HTTPURLResponse)?.statusCode == 200 else { continue }
+            let name = (p as NSString).lastPathComponent
+            let f = dir.appendingPathComponent(name)
+            if (try? data.write(to: f)) != nil { files.append(f) }
+        }
+        busy = false; message = nil
+        if files.isEmpty { message = "Couldn't fetch the photos — is the booth reachable?" }
+        else { shareURLs = ShareURLs(urls: files) }
+    }
+
     private func download() {
         guard !chosen.isEmpty else { return }
         let qs = chosen.map { "p=" + ($0.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? $0) }.joined(separator: "&")
@@ -158,6 +195,15 @@ extension CharacterSet {
         cs.remove(charactersIn: "&=?/")
         return cs
     }()
+}
+
+/// iOS share sheet (AirDrop, Messages, Mail…) for downloaded photo files.
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ c: UIActivityViewController, context: Context) {}
 }
 
 /// Front-camera selfie picker.

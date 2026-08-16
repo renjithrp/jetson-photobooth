@@ -8,6 +8,7 @@ struct ContentView: View {
                 await booth.connectAndRefresh()
                 await booth.checkAuth()
                 booth.startWatchdog()      // self-heal dropped Wi-Fi / booth connection
+                PhotoSync.shared.start(booth: booth)   // auto-save new photos to Photos
             }
     }
 }
@@ -20,6 +21,7 @@ struct SettingsSheet: View {
     @AppStorage("wifiAuto") private var wifiAuto = true
     @AppStorage("wifiSSID") private var wifiSSID = "PhotoBooth"
     @AppStorage("wifiPass") private var wifiPass = "booth1234"
+    @AppStorage("autoSyncPhotos") private var autoSync = true
 
     var body: some View {
         NavigationStack {
@@ -34,6 +36,11 @@ struct SettingsSheet: View {
                     TextField("Network name (SSID)", text: $wifiSSID)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                     SecureField("Password", text: $wifiPass)
+                }
+                Section("Photos") {
+                    Toggle("Auto-save new photos to this iPad", isOn: $autoSync)
+                    Text("New booth photos are saved into the Photos app automatically (checked every 20s). Existing backlogs are skipped.")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section { Text("Point the app at the booth backend on port 8000 (hotspot: http://192.168.50.1:8000, or the LAN IP). Auto-join connects to the booth hotspot on open (iOS asks once).").font(.footnote) }
             }

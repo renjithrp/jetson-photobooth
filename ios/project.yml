@@ -32,6 +32,7 @@ targets:
         UILaunchScreen: {}
         NSCameraUsageDescription: "Take a selfie to find your photos."
         NSLocalNetworkUsageDescription: "Connect to the photo booth on this network."
+        NSPhotoLibraryAddUsageDescription: "Save booth photos to this iPad's photo library."
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           NSAllowsArbitraryLoads: true

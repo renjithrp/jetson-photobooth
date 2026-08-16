@@ -53,6 +53,10 @@ class TriggerSettings(BaseModel):
     face_region_w: float = 0.40
     face_region_h: float = 0.76
     face_min_size: float = 0.0            # min face width as a fraction of frame (0 = off)
+    # Debug overlay: draw the live hand skeleton + detection verdict on the kiosk /
+    # iPad preview so mis-detections can be diagnosed at the booth (why a gesture
+    # didn't fire: not fully in frame, wrong pose match, on-face rejection, hold reset).
+    show_gesture_overlay: bool = False
 
 
 class TimerSettings(BaseModel):

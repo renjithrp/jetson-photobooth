@@ -46,6 +46,58 @@ struct LiveView: UIViewRepresentable {
             <html><body style="margin:0;background:#000;height:100vh;display:flex;
             align-items:center;justify-content:center;overflow:hidden">
             <img id="v" src="\(url.absoluteString)" style="max-width:100%;max-height:100%;transform:scaleX(-1)">
+            <canvas id="g" style="position:fixed;inset:0;pointer-events:none"></canvas>
+            <script>
+            // Gesture debug overlay (mirrors the kiosk): when the admin setting
+            // trigger.show_gesture_overlay is on, poll the worker's verdict and draw
+            // the hand skeleton + reason over the (mirrored, contain-fit) stream.
+            const gc = document.getElementById('g'), gx = gc.getContext('2d');
+            const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],
+              [10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+            let overlayOn = false;
+            async function pollCfg(){
+              try { const s = await (await fetch('/api/settings')).json();
+                    overlayOn = !!(s.trigger && s.trigger.show_gesture_overlay);
+                    if(!overlayOn) gx.clearRect(0,0,gc.width,gc.height);
+              } catch(e){} }
+            pollCfg(); setInterval(pollCfg, 5000);
+            setInterval(async () => {
+              if (!overlayOn) return;
+              let ev; try { ev = await (await fetch('/api/gesture/state')).json(); } catch(e){ return; }
+              if (gc.width !== innerWidth || gc.height !== innerHeight){ gc.width = innerWidth; gc.height = innerHeight; }
+              gx.clearRect(0,0,gc.width,gc.height);
+              if (!ev.hand || !ev.lm || (Date.now()/1000 - (ev.t||0)) > 1.5) return;
+              const el = document.getElementById('v');
+              const iw = el.naturalWidth||4, ih = el.naturalHeight||3;
+              const sc = Math.min(gc.width/iw, gc.height/ih);       // contain fit
+              const dw = iw*sc, dh = ih*sc, ox = (gc.width-dw)/2, oy = (gc.height-dh)/2;
+              const P = p => [ox + (1-p[0])*dw, oy + p[1]*dh];      // stream is mirrored
+              const col = ev.on_face ? '#f87171' : ev.match ? '#4ade80' : '#fbbf24';
+              gx.strokeStyle = col; gx.fillStyle = col; gx.lineWidth = 3; gx.lineCap = 'round';
+              for (const [a,b] of BONES){ const [x1,y1]=P(ev.lm[a]), [x2,y2]=P(ev.lm[b]);
+                gx.beginPath(); gx.moveTo(x1,y1); gx.lineTo(x2,y2); gx.stroke(); }
+              for (const p of ev.lm){ const [x,y]=P(p); gx.beginPath(); gx.arc(x,y,4,0,7); gx.fill(); }
+              const [wx,wy] = P(ev.lm[0]);
+              const reason = ev.on_face ? 'rejected: looks like a face'
+                : !ev.in_frame ? 'hand not fully in frame'
+                : !ev.match ? ('pose \\u2260 ' + ev.want)
+                : ev.cooldown_left > 0 ? ('cooldown ' + ev.cooldown_left + 's')
+                : ev.want === 'wave' ? ('wave ' + (ev.swings||0) + '/3 swings')
+                : ev.hold_progress > 0 ? ('hold ' + (ev.hold_progress*ev.hold_need).toFixed(1) + '/' + ev.hold_need + 's')
+                : ev.want + ' \\u2713';
+              gx.font = '700 15px -apple-system'; gx.textAlign = 'center';
+              const tw = gx.measureText(reason).width + 20;
+              const bx = Math.min(Math.max(wx, tw/2+6), gc.width-tw/2-6), by = Math.max(wy-50, 26);
+              gx.fillStyle = '#000a'; gx.beginPath(); gx.roundRect(bx-tw/2, by-17, tw, 25, 12); gx.fill();
+              gx.fillStyle = col; gx.fillText(reason, bx, by+1);
+              if (ev.hold_progress > 0){
+                gx.strokeStyle = '#ffffff55'; gx.lineWidth = 5;
+                gx.beginPath(); gx.arc(wx, wy, 26, 0, 2*Math.PI); gx.stroke();
+                gx.strokeStyle = col;
+                gx.beginPath(); gx.arc(wx, wy, 26, -Math.PI/2, -Math.PI/2 + 2*Math.PI*ev.hold_progress); gx.stroke();
+              }
+            }, 200);
+            </script>
             <script>
             // WebKit fires `load` repeatedly while an x-mixed-replace stream runs, so
             // treat load events as a HEARTBEAT: reconnect only when they stop (stream

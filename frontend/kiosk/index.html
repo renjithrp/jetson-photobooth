@@ -63,6 +63,7 @@
 </head>
 <body>
   <img id="preview" alt="">
+  <canvas id="gestcanvas" style="position:fixed;inset:0;pointer-events:none;z-index:4"></canvas>
   <div id="facezone" class="hidden"><span>Stand here <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></span></div>
   <div class="flash" id="flash"></div>
 
@@ -192,6 +193,8 @@ async function loadInfo(){
     const s = await (await fetch("/api/settings")).json();
     attractAfter = s.timer.attract_after_seconds || 60;
     mirror = s.preview.mirror !== false;
+    gestureOverlay = !!(s.trigger && s.trigger.show_gesture_overlay);
+    if (!gestureOverlay) clearGesture();
     L("preview").style.transform = mirror ? "scaleX(-1)" : "none";
     renderFaceZone();
     L("boothName").textContent = s.general.booth_name;
@@ -244,9 +247,73 @@ function onEvent(ev){
       else { L("qrwrap").style.display="none"; }
       break;
     case "error": show("error"); L("errmsg").textContent = ev.message||""; break;
+    case "gesture": if (gestureOverlay) drawGesture(ev); break;
   }
 }
 function flash(){ const f=L("flash"); f.classList.add("on"); setTimeout(()=>f.classList.remove("on"),120); }
+
+// ---- gesture debug overlay (admin: trigger.show_gesture_overlay) ------------
+// Draws the worker's live verdict on the video: hand skeleton (green = pose
+// matches, amber = hand seen but wrong pose, red = rejected as a face mis-read),
+// a hold-progress ring, and a one-line reason — so you can SEE why a gesture
+// does or doesn't fire.
+let gestureOverlay = false;
+let gestClearTimer = null;
+// MediaPipe hand skeleton: landmark index pairs
+const HAND_BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],
+  [10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+function clearGesture(){
+  const c = L("gestcanvas");
+  c.getContext("2d").clearRect(0,0,c.width,c.height);
+}
+function drawGesture(ev){
+  const c = L("gestcanvas");
+  if (c.width !== window.innerWidth || c.height !== window.innerHeight){
+    c.width = window.innerWidth; c.height = window.innerHeight;
+  }
+  const g = c.getContext("2d");
+  g.clearRect(0,0,c.width,c.height);
+  clearTimeout(gestClearTimer);
+  gestClearTimer = setTimeout(clearGesture, 1200);   // fade when updates stop
+  if (!ev.hand || !ev.lm) return;
+  // map normalised frame coords onto the object-fit:cover preview (like facezone)
+  const img = L("preview");
+  const iw = img.naturalWidth || 4, ih = img.naturalHeight || 3;
+  const scale = Math.max(c.width/iw, c.height/ih);
+  const dw = iw*scale, dh = ih*scale, ox = (c.width-dw)/2, oy = (c.height-dh)/2;
+  const P = p => [ox + (mirror ? (1-p[0]) : p[0])*dw, oy + p[1]*dh];
+  const col = ev.on_face ? "#f87171" : ev.match ? "#4ade80" : "#fbbf24";
+  g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 4; g.lineCap = "round";
+  for (const [a,b] of HAND_BONES){
+    const [x1,y1] = P(ev.lm[a]), [x2,y2] = P(ev.lm[b]);
+    g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.stroke();
+  }
+  for (const p of ev.lm){
+    const [x,y] = P(p);
+    g.beginPath(); g.arc(x,y,5,0,7); g.fill();
+  }
+  // status chip above the wrist + hold-progress ring
+  const [wx,wy] = P(ev.lm[0]);
+  const reason = ev.on_face ? "rejected: looks like a face"
+    : !ev.in_frame ? "hand not fully in frame"
+    : !ev.match ? `pose ≠ ${ev.want}`
+    : ev.cooldown_left > 0 ? `cooldown ${ev.cooldown_left}s`
+    : ev.want === "wave" ? `wave ${ev.swings||0}/3 swings`
+    : ev.hold_progress > 0 ? `hold ${(ev.hold_progress*ev.hold_need).toFixed(1)}/${ev.hold_need}s`
+    : ev.want + " ✓";
+  g.font = "700 22px system-ui"; g.textAlign = "center";
+  const tw = g.measureText(reason).width + 28;
+  const bx = Math.min(Math.max(wx, tw/2+8), c.width-tw/2-8), by = Math.max(wy-70, 40);
+  g.fillStyle = "#000a";
+  g.beginPath(); g.roundRect(bx-tw/2, by-24, tw, 36, 18); g.fill();
+  g.fillStyle = col; g.fillText(reason, bx, by+2);
+  if (ev.hold_progress > 0){
+    g.strokeStyle = "#ffffff55"; g.lineWidth = 6;
+    g.beginPath(); g.arc(wx, wy, 34, 0, 2*Math.PI); g.stroke();
+    g.strokeStyle = col;
+    g.beginPath(); g.arc(wx, wy, 34, -Math.PI/2, -Math.PI/2 + 2*Math.PI*ev.hold_progress); g.stroke();
+  }
+}
 
 function connectWS(){
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
