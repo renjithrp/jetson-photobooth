@@ -43,8 +43,11 @@ def gesture_matches(gtype: str, lm) -> bool:
         # Tolerate one finger not registering (pinky/ring landmarks are noisy at
         # booth distance in the low-res live view), BUT the fingers that do count
         # must be CLEARLY extended — tip well above the PIP joint, scaled to hand
-        # size — so a half-open / half-curled palm no longer fires.
-        m = 0.15
+        # size. open_palm demands near-STRAIGHT fingers (0.30 hand-units): a
+        # casually raised hand with its natural half-curl sits around 0.15-0.25
+        # and was firing as an open palm. wave stays looser (0.15) because a
+        # mid-swing tilted palm compresses the projected vertical gaps.
+        m = 0.15 if gtype == "wave" else 0.30
         clear = sum(ext(t, p, m) for t, p in _FINGERS)
         return clear >= 3
     if gtype == "fist":

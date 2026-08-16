@@ -49,6 +49,19 @@ def test_open_palm_rejects_half_open_hand():
     assert not gesture_matches("open_palm", lm)
 
 
+def test_open_palm_rejects_relaxed_hand():
+    # A casually raised hand: fingers up but with their natural half-curl — tips
+    # ~0.24 hand-units above the PIPs. Reads as "extended" by the loose test but
+    # must NOT count as a deliberate open palm (needs 0.30 = near-straight).
+    lm = hand()
+    for tip in (8, 12, 16, 20):
+        lm[tip] = LM(0.5, 0.38)     # pip at 0.5, hand size 0.5 -> 0.24 hand-units
+    assert not gesture_matches("open_palm", lm)
+    # ...but the same relaxed pose still counts as a wave frame (looser 0.15
+    # margin, motion does the discriminating there)
+    assert gesture_matches("wave", lm)
+
+
 def test_hand_fully_in_frame():
     # wrist at the very bottom edge (arm raised from below the frame) is fine —
     # only the fingertips must be visible
