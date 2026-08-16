@@ -45,12 +45,28 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
   twice; ~20 fps sampling for wave, 6 fps for static poses). Arduino button wired.
 - **Face grouping**: ON (CUDA). **AI background**: OFF. **Gaze correction**: OFF (measure-only scaffold).
 - **Printing** (CUPS): OFF.
-- **Cloud uploads**: S3/FTP OFF. **Google Drive is guest-opt-in** (default OFF per photo;
-  uploads once per photo no matter how many guests opt a group shot in). Drive itself still
-  needs the admin OAuth connect before the opt-in button appears to guests.
-- **WhatsApp opt-in**: ON (collect-only) — guests leave a number + photos; admin sends via
-  wa.me from the send queue (admin → Sharing, or the iOS app) and marks sent. Deduped per
-  (number, photo). Off-network delivery needs a public link (Drive/S3 or a public base URL).
+- **Cloud uploads**: S3/FTP OFF. **Google Drive CONNECTED** (2026-08-16; OAuth web client
+  865464360538-…, `drive.file` scope, folder `PhotoBooth`, share links on). Connect/reconnect
+  recipe: Google only accepts localhost redirect URIs now → `ssh -N -L 8000:localhost:8000
+  pb@<booth>` then Connect from `http://localhost:8000/admin` (network-independent).
+  ⚠ OAuth consent screen still "Testing" — refresh token dies after 7 days until the app is
+  published ("In production"; no review needed for drive.file).
+- **Google Drive guest opt-in**: ON and verified live — "Save to Drive" (iPad app + guest
+  page) queues via the sync worker; per-photo dedup (a group shot uploads once).
+- **WhatsApp opt-in**: ON (collect-only), verified end-to-end. Admin send queue (admin →
+  Sharing, or iOS app ⋯ → Admin): **"Send with cloud links"** uploads the guest's pending
+  photos to Drive under `guests/<phone>/` and opens wa.me with **ONE public folder link**
+  (per-file links are the S3/fallback path). Idempotent + deduped: re-opt-ins add only new
+  photos, the folder link never changes, sent photos are never re-queued. Keyed to the
+  normalized phone number — typos create separate guests.
+- **Guest self-download (one-scan)**: photos selected on the iPad are announced as a
+  pending download; joining the hotspot via the Wi-Fi QR pops the captive sheet onto
+  /booth with a **server-side-rendered** "Your N photos are ready — Download" banner
+  (captive mini-browsers don't run JS). Enablers: probe-domain-only DNS hijack
+  (`captive-probe-hijack.conf` — guests keep real internet), the kiosk iPad's probes are
+  answered with "Success" so it never sees the sheet (reserved 192.168.50.203,
+  BOOTH_KIOSK_IPS drop-in), captive proxy retries stale sockets after backend restarts.
+  The direct-download QR remains as step-2 fallback.
 - **Clock guard**: captures hold up to 10 s for NTP sync after boot (no more 1969 sessions);
   failed captures remove their empty session folder.
 - **Camera Wi-Fi fallback: NOT possible with the A7R IV.** cameraDaemon was rebuilt
@@ -91,6 +107,22 @@ off the phone like any app.)
   never auto-locks, 10 s idle → cancellable 5 s countdown (with mini live view + "Go to
   camera") unwinds to the booth screen.
 - Talks to the backend on **:8000** (the captive :80 only exposes guest routes).
+- Self-healing: a connectivity watchdog probes every ~12 s and re-joins Wi-Fi / re-finds
+  the booth (fail-fast HTTP timeouts — a booth restart can't wedge it), and the live view
+  reconnects itself via a load-event heartbeat (~10 s after a stream drop) instead of
+  freezing while the status pill stays green.
+
+## Key changes (2026-08-16 session)
+Google Drive connected (localhost-redirect OAuth via SSH tunnel) · WhatsApp send queue
+"Send with cloud links": one Drive folder link per guest (`guests/<phone>`), per-file
+fallback, all verified live incl. returning-guest merge/dedup · one-scan guest download:
+probe-domain DNS hijack + pending-download announce + server-side banner on the captive
+sheet + kiosk-iPad probe exemption · captive portal survives backend restarts (fresh
+pending lookups, proxy retry) · iPad app: connectivity watchdog + fail-fast timeouts +
+live-view heartbeat reconnect; iPad-only target; guest flow (selfie → WhatsApp keypad /
+Drive opt-in / instant-download QR), photo viewer with pinch zoom, 10 s idle-return with
+cancellable countdown + mini live view, auto Wi-Fi join, keep-awake · test data purged
+(consent store, Drive folder, sync queue) — clean baseline for the next event.
 
 ## Key changes (2026-08-15 session)
 Apport disabled (`enabled=0` in `/etc/default/apport`, service stopped + disabled) so crash

@@ -35,10 +35,31 @@ struct LiveView: UIViewRepresentable {
         var loadedID = -1
         func load(_ web: WKWebView, url: URL, id: Int) {
             loadedID = id
+            // The <img> self-heals: a booth backend restart ends the MJPEG stream
+            // silently (fires `load`, not `error`, for multipart streams) and nothing
+            // else revives it — the live view froze while the status pill stayed
+            // green. Debounced reconnect on both events, with a cache-buster.
             let html = """
             <html><body style="margin:0;background:#000;height:100vh;display:flex;
             align-items:center;justify-content:center;overflow:hidden">
-            <img src="\(url.absoluteString)" style="max-width:100%;max-height:100%;transform:scaleX(-1)">
+            <img id="v" src="\(url.absoluteString)" style="max-width:100%;max-height:100%;transform:scaleX(-1)">
+            <script>
+            // WebKit fires `load` repeatedly while an x-mixed-replace stream runs, so
+            // treat load events as a HEARTBEAT: reconnect only when they stop (stream
+            // ended, e.g. booth restart) or on error. Reconnecting on every load — the
+            // Chromium-style fix — cycled a healthy stream every ~3s here.
+            const v = document.getElementById('v');
+            const base = '\(url.absoluteString)';
+            let beat = Date.now();
+            v.onload  = () => { beat = Date.now(); };
+            v.onerror = () => { beat = 0; };
+            setInterval(() => {
+              if (Date.now() - beat > 9000) {
+                beat = Date.now();   // one reconnect per stall window
+                v.src = base + (base.includes('?') ? '&' : '?') + 't=' + Date.now();
+              }
+            }, 3000);
+            </script>
             </body></html>
             """
             web.loadHTMLString(html, baseURL: url)
