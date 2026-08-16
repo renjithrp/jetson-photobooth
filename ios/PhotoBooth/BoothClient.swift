@@ -34,7 +34,12 @@ final class BoothClient: ObservableObject {
     private lazy var session: URLSession = {
         let cfg = URLSessionConfiguration.default
         cfg.httpCookieStorage = .shared          // keep the admin session cookie
-        cfg.waitsForConnectivity = true
+        // Fail fast instead of hanging: waitsForConnectivity once wedged the whole
+        // watchdog loop on stale keep-alive sockets after a booth restart ("No booth"
+        // forever while the stream kept playing). The watchdog owns recovery.
+        cfg.waitsForConnectivity = false
+        cfg.timeoutIntervalForRequest = 10
+        cfg.timeoutIntervalForResource = 60      // room for selfie uploads over Wi-Fi
         return URLSession(configuration: cfg, delegate: TrustDelegate(host: host),
                           delegateQueue: nil)
     }()
