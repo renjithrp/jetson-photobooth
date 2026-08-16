@@ -99,6 +99,18 @@ def test_open_palm_rejects_side_palm():
     assert not gesture_matches("open_palm", lm)
 
 
+def test_open_palm_rejects_back_of_hand():
+    # Fixture geometry (index MCP left of pinky MCP, raw non-mirrored frame) is
+    # the subject's RIGHT palm facing the camera — MediaPipe labels that hand
+    # "Left" (its convention assumes selfie mirroring). The same geometry
+    # labelled "Right" is the BACK of the subject's left hand: must not fire.
+    lm = hand(True, True, True, True)
+    assert gesture_matches("open_palm", lm, handed="Left")
+    assert not gesture_matches("open_palm", lm, handed="Right")
+    # without handedness info the side check is skipped (no false negatives)
+    assert gesture_matches("open_palm", lm)
+
+
 def test_hand_fully_in_frame():
     # wrist at the very bottom edge (arm raised from below the frame) is fine —
     # only the fingertips must be visible

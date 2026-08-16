@@ -25,7 +25,23 @@ def thumb_debug(lm) -> str:
     return f"fingers_up={count}(need 0) thumb_above_knuckle={above}(need>0.10)"
 
 
-def gesture_matches(gtype: str, lm) -> bool:
+def palm_side(lm, handed) -> bool | None:
+    """True = palm toward the camera, False = back of the hand, None = unknown.
+
+    The wrist -> index-MCP x pinky-MCP cross product's sign flips between palm
+    and back; which sign means "palm" depends on which hand it is. `handed` is
+    MediaPipe's label, whose convention assumes a MIRRORED selfie image — our
+    frames are raw (not mirrored), so the label is anatomically swapped:
+    'Left' here is the subject's right hand. In a raw frame the subject's right
+    palm (thumb pointing to their right = image left) gives z > 0."""
+    if handed not in ("Left", "Right"):
+        return None
+    z = ((lm[5].x - lm[0].x) * (lm[17].y - lm[0].y)
+         - (lm[5].y - lm[0].y) * (lm[17].x - lm[0].x))
+    return (z > 0) if handed == "Left" else (z < 0)
+
+
+def gesture_matches(gtype: str, lm, handed=None) -> bool:
     hand = _dist(lm[0], lm[9]) or 1e-6
 
     def ext(tip, pip, margin=0.0):
@@ -67,6 +83,10 @@ def gesture_matches(gtype: str, lm) -> bool:
         # nearly nothing in projection — a facing palm spans ~0.5-0.7 hand-units
         # from index MCP to pinky MCP, edge-on reads under ~0.25.
         if _dist(lm[5], lm[17]) < 0.35 * hand:
+            return False
+        # PALM side only — the back of the hand mirrors every extension check,
+        # but chirality (handedness + knuckle-row winding) tells them apart.
+        if palm_side(lm, handed) is False:
             return False
         wrist = lm[0]
         mcp = {8: 5, 12: 9, 16: 13, 20: 17}

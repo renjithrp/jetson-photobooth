@@ -76,7 +76,7 @@ struct LiveView: UIViewRepresentable {
                 'want ' + ev.want + '  hands ' + (ev.hands ?? 1) + '  score ' + (ev.score ?? '-') +
                 (ev.tune_mode ? '  [TUNE MODE]' : '') + '\\n' +
                 'span ' + pct(ev.span) + '  min ' + pct(ev.min_size) + '  face_h ' + (ev.face_h ? pct(ev.face_h) : '-') + '\\n' +
-                'pose ' + yn(ev.match) + '  size ' + yn(ev.size_ok) + '  in_frame ' + yn(ev.in_frame) +
+                'pose ' + yn(ev.match) + '  palm ' + yn(ev.palm) + '  size ' + yn(ev.size_ok) + '  in_frame ' + yn(ev.in_frame) +
                 '  near_face ' + yn(ev.near_face) + '  on_face ' + (ev.on_face ? 'YES' : 'no') + '\\n' +
                 'streak ' + (ev.streak ?? 0) + '  hold ' + pct(ev.hold_progress) +
                 '  ratio ' + pct(ev.hold_ratio) + '  cooldown ' + (ev.cooldown_left ?? 0) + 's';
@@ -107,6 +107,7 @@ struct LiveView: UIViewRepresentable {
                 : tooSmall ? ('too small/far (' + Math.round(ev.span*100) + '% < ' + Math.round(ev.min_size*100) + '%) \\u2014 pose ignored')
                 : ev.near_face === false ? 'no face near the hand'
                 : !ev.in_frame ? 'hand not fully in frame'
+                : (ev.palm === false && ev.want === 'open_palm') ? 'back of hand \\u2014 show your palm'
                 : !ev.match ? ('pose \\u2260 ' + ev.want)
                 : ev.cooldown_left > 0 ? ('cooldown ' + ev.cooldown_left + 's')
                 : ev.want === 'wave' ? ('wave ' + (ev.swings||0) + '/3 swings')

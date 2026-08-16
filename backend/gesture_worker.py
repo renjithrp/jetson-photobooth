@@ -260,16 +260,23 @@ class GestureWorker:
             # Evaluate EVERY tracked hand (trigger.max_hands) and act on the best
             # candidate: a fully passing hand wins; otherwise the largest hand is
             # what the overlay shows, so you can see why it was rejected.
+            labels = []
+            for h in (res.multi_handedness or []):
+                try:
+                    labels.append(h.classification[0].label)
+                except Exception:
+                    labels.append(None)
             best = None
-            for hl in (hands_lm or []):
-                ev = self._eval_hand(hl.landmark, t, gtype, faces, face_h)
+            for i, hl in enumerate(hands_lm or []):
+                handed = labels[i] if i < len(labels) else None
+                ev = self._eval_hand(hl.landmark, t, gtype, faces, face_h, handed)
                 key = (ev["detected"], ev["span"])
                 if best is None or key > best[0]:
                     best = (key, ev, hl.landmark)
             if best is None:
                 lm, ev = None, {"in_frame": False, "span": 0.0, "eff_min": 0.0,
                                 "size_ok": True, "near_face": True, "on_face": False,
-                                "gesture_ok": False, "detected": False}
+                                "gesture_ok": False, "detected": False, "palm": None}
             else:
                 _, ev, lm = best
             detected = ev["detected"]
@@ -289,7 +296,8 @@ class GestureWorker:
                      f"in_frame={ev['in_frame']} span={ev['span']:.2f} "
                      f"min={ev['eff_min']:.2f} size_ok={ev['size_ok']} "
                      f"near_face={ev['near_face']} on_face={ev['on_face']} "
-                     f"in_zone={face_ok} streak={self._streak} -> fire={detected}{extra}")
+                     f"palm={ev.get('palm')} in_zone={face_ok} "
+                     f"streak={self._streak} -> fire={detected}{extra}")
 
             hold = float(getattr(t, "gesture_hold_seconds", 1.5))
             cooldown = float(getattr(t, "cooldown_seconds", 5.0))
@@ -297,11 +305,12 @@ class GestureWorker:
             self._publish(gtype, lm, ev["gesture_ok"], ev["in_frame"], ev["on_face"],
                           face_ok, now, hold, cooldown, ev["span"], ev["size_ok"],
                           ev["eff_min"], ev["near_face"],
-                          face_h=face_h, hands=len(hands_lm or []), score=score)
+                          face_h=face_h, hands=len(hands_lm or []), score=score,
+                          palm=ev.get("palm"))
         except Exception as e:
             _log(f"detect error: {e}")
 
-    def _eval_hand(self, lm, t, gtype, faces, face_h) -> dict:
+    def _eval_hand(self, lm, t, gtype, faces, face_h, handed=None) -> dict:
         """Run every per-hand gate on one hand's landmarks -> verdict dict.
 
         Size gate: MediaPipe hallucinates tiny "hands" on background patterns. A
@@ -330,10 +339,11 @@ class GestureWorker:
             if assoc > 0:
                 near_face = d <= assoc * max(fh, 1e-6)
             on_face = gestures.hand_on_face(cx, cy, faces)
-        gesture_ok = in_frame and gestures.gesture_matches(gtype, lm)
+        gesture_ok = in_frame and gestures.gesture_matches(gtype, lm, handed)
         return {"in_frame": in_frame, "span": span, "eff_min": eff_min,
                 "size_ok": size_ok, "near_face": near_face, "on_face": on_face,
                 "gesture_ok": gesture_ok,
+                "palm": gestures.palm_side(lm, handed),
                 "detected": gesture_ok and size_ok and near_face and not on_face}
 
     def _step_trigger(self, detected, gtype, lm, now, t, hold, cooldown) -> None:
@@ -401,7 +411,7 @@ class GestureWorker:
 
     def _publish(self, gtype, lm, gesture_ok, in_frame, on_face, face_ok,
                  now, hold, cooldown, span=0.0, size_ok=True, min_size=0.0,
-                 near_face=True, face_h=0.0, hands=0, score=0.0) -> None:
+                 near_face=True, face_h=0.0, hands=0, score=0.0, palm=None) -> None:
         """Push the detection verdict to the backend, which rebroadcasts it on the
         kiosk WebSocket bus — that's what the on-video gesture overlay draws. Sent
         per detection frame while a hand is visible, plus ONE clearing message when
@@ -424,6 +434,7 @@ class GestureWorker:
                 "size_ok": bool(size_ok),
                 "min_size": round(min_size, 3),
                 "near_face": bool(near_face),
+                "palm": palm,
                 "confirming": self._hold_start is None and self._streak > 0,
                 "on_face": bool(on_face),
                 "face_in_zone": face_ok,
