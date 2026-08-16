@@ -118,14 +118,19 @@ async def _guest_page() -> HTMLResponse:
     text = (FRONTEND / "guest" / "index.html").read_text()
     disp, title, url = "none", "", "#"
     try:
-        r = await _client.get("/api/download/pending")
-        j = r.json()
+        # Fresh client on purpose: the shared pool's keep-alive sockets go stale when
+        # the backend restarts, and a silently-failed lookup here served the popup
+        # WITHOUT the download button (observed live). One tiny loopback request per
+        # /booth load — guests join rarely, correctness wins.
+        async with httpx.AsyncClient(base_url=BACKEND_ORIGIN, verify=False,
+                                     timeout=2.0) as c:
+            j = (await c.get("/api/download/pending")).json()
         if j.get("pending"):
             disp = "block"
             title = f"Your {j['count']} photo{'s' if j['count'] > 1 else ''} are ready"
             url = html_lib.escape(j["download"], quote=True)
     except Exception:
-        pass
+        log.warning("pending-download lookup failed; serving page without banner")
     text = (text.replace("__PENDING_DISPLAY__", disp)
                 .replace("__PENDING_TITLE__", title)
                 .replace("__PENDING_URL__", url))
@@ -140,16 +145,27 @@ async def _proxy(request: Request, path: str) -> Response:
     assert _client is not None
     headers = {k: v for k, v in request.headers.items()
                if k.lower() not in ("host", "connection", "accept-encoding")}
-    req = _client.build_request(
-        request.method, httpx.URL(path=path, query=request.url.query.encode()),
-        headers=headers, content=await request.body(),
-    )
-    try:
-        upstream = await _client.send(req, stream=True)
-    except httpx.HTTPError as e:
-        log.warning("proxy %s %s failed: %s", request.method, path, e)
-        return Response("Photo booth is starting up — please try again.",
-                        status_code=502, media_type="text/plain")
+    body = await request.body()
+    upstream = None
+    # One retry: after a backend restart the pool's keep-alive sockets are stale and
+    # the first request dies with a connection-level error; a fresh attempt succeeds.
+    for attempt in (1, 2):
+        req = _client.build_request(
+            request.method, httpx.URL(path=path, query=request.url.query.encode()),
+            headers=headers, content=body,
+        )
+        try:
+            upstream = await _client.send(req, stream=True)
+            break
+        except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadError) as e:
+            if attempt == 2:
+                log.warning("proxy %s %s failed: %s", request.method, path, e)
+                return Response("Photo booth is starting up — please try again.",
+                                status_code=502, media_type="text/plain")
+        except httpx.HTTPError as e:
+            log.warning("proxy %s %s failed: %s", request.method, path, e)
+            return Response("Photo booth is starting up — please try again.",
+                            status_code=502, media_type="text/plain")
     out_headers = {k: v for k, v in upstream.headers.items()
                    if k.lower() not in _DROP_RESP_HEADERS}
     return StreamingResponse(upstream.aiter_raw(), status_code=upstream.status_code,
