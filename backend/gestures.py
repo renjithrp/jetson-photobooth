@@ -62,6 +62,12 @@ def gesture_matches(gtype: str, lm) -> bool:
         # hidden fingertips hallucinated ABOVE the PIPs in y, but the tips stay
         # near the knuckles. A straight finger's tip sits well beyond its MCP
         # knuckle relative to the wrist (~0.8 hand-units); require 0.35+.
+        # The palm must FACE the camera: a side-on hand (karate-chop orientation)
+        # has four straight fingers too, but its knuckle row is foreshortened to
+        # nearly nothing in projection — a facing palm spans ~0.5-0.7 hand-units
+        # from index MCP to pinky MCP, edge-on reads under ~0.25.
+        if _dist(lm[5], lm[17]) < 0.35 * hand:
+            return False
         wrist = lm[0]
         mcp = {8: 5, 12: 9, 16: 13, 20: 17}
         straight = sum(1 for t, p in _FINGERS if ext(t, p, m) and

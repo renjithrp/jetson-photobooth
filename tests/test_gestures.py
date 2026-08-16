@@ -15,6 +15,8 @@ def hand(index=False, middle=False, ring=False, pinky=False,
     lm[0] = LM(0.5, 1.0)        # wrist
     lm[9] = LM(0.5, 0.5)        # middle MCP  -> hand size = 0.5
     lm[5] = LM(0.45, 0.55)      # index MCP
+    lm[13] = LM(0.56, 0.50)     # ring MCP    } knuckle row spread as a palm FACING
+    lm[17] = LM(0.65, 0.55)     # pinky MCP   } the camera (0.4 hand-units wide)
     up, down, pip = 0.3, 0.7, 0.5
     lm[6], lm[8] = LM(0.5, pip), LM(0.5, up if index else down)
     lm[10], lm[12] = LM(0.5, pip), LM(0.5, up if middle else down)
@@ -83,6 +85,17 @@ def test_open_palm_rejects_camera_facing_fist():
     lm = hand(True, True, True, True)
     for tip in (8, 12, 16, 20):
         lm[tip] = LM(0.5, 0.34)
+    assert not gesture_matches("open_palm", lm)
+
+
+def test_open_palm_rejects_side_palm():
+    # An edge-on hand (karate-chop orientation) has four straight fingers, but its
+    # knuckle row is foreshortened to almost nothing in projection — the
+    # palm-facing check (index->pinky MCP >= 0.35 hand-units) must reject it.
+    lm = hand(True, True, True, True)
+    lm[5] = LM(0.49, 0.55)
+    lm[13] = LM(0.50, 0.52)
+    lm[17] = LM(0.51, 0.55)     # knuckle row width 0.02 = 0.04 hand-units
     assert not gesture_matches("open_palm", lm)
 
 
