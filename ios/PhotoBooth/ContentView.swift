@@ -47,7 +47,7 @@ struct SettingsSheet: View {
                     Button("Save") { booth.baseURL = text.isEmpty ? booth.baseURL : text
                         Task { await booth.refresh() }; dismiss() }
                 }
-                ToolbarItem(placement: .cancelAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
             .onAppear { text = booth.baseURL }
         }

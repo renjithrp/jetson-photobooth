@@ -1,0 +1,42 @@
+name: PhotoBooth
+options:
+  bundleIdPrefix: com.renjithrp
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: 67F74CD3WB
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1,2"        # iPhone + iPad
+targets:
+  PhotoBooth:
+    type: application
+    platform: iOS
+    sources:
+      - path: PhotoBooth
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.renjithrp.photobooth
+    info:
+      path: PhotoBooth/Info.plist
+      properties:
+        CFBundleDisplayName: PhotoBooth
+        UILaunchScreen: {}
+        NSCameraUsageDescription: "Take a selfie to find your photos."
+        NSLocalNetworkUsageDescription: "Connect to the photo booth on this network."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight

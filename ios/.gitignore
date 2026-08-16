@@ -1,0 +1,5 @@
+# Generated Xcode project (regenerate with: xcodegen generate) and build output
+PhotoBooth.xcodeproj/
+build/
+DerivedData/
+*.xcuserstate
