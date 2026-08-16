@@ -53,13 +53,17 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
   (number, photo). Off-network delivery needs a public link (Drive/S3 or a public base URL).
 - **Clock guard**: captures hold up to 10 s for NTP sync after boot (no more 1969 sessions);
   failed captures remove their empty session folder.
-- **Camera Wi-Fi fallback (standby)**: cameraDaemon rebuilt on-device (busy-spin fix now
-  live) with a network fallback — if USB enumerates nothing and `BOOTH_CAMERA_IP`/`_MAC`
-  are set in photobooth-camera.service, it connects via
-  `CreateCameraObjectInfoEthernetConnection` (ILCE-7RM4A, no SSH). NOT yet activated:
-  needs the camera joined to the PhotoBooth hotspot in "PC Remote > Wi-Fi", a dnsmasq IP
-  reservation, and the env vars uncommented. Failover is manual-assisted (camera menu
-  selects USB vs Wi-Fi transport). Backup binary at external/crsdk/cameraDaemon.bak.
+- **Camera Wi-Fi fallback: NOT possible with the A7R IV.** cameraDaemon was rebuilt
+  on-device (busy-spin fix now live) with a network fallback (`BOOTH_CAMERA_IP`/`_MAC`
+  env → `CreateCameraObjectInfoEthernetConnection`), and it was tested live — the SDK
+  returns `Api_NotSupportModelOfEthernet` for ILCE-7RM4A: the model is in the header
+  enum but the runtime only allows network remote for newer bodies (7RM5/A7IV/A1/FX3…).
+  Its Wi-Fi PC Remote only talks to Sony's Imaging Edge. The fallback code stays in the
+  daemon (dormant, env unset) and works as-is if the camera is ever upgraded to a
+  network-capable body; the camera's hotspot MAC e8:4f:25:fd:af:47 has a dnsmasq
+  reservation at 192.168.50.29. Backup binary at external/crsdk/cameraDaemon.bak.
+  Practical USB backup instead: a spare USB cable + the second USB port (the
+  camera-usb-kick service already self-heals the stale-session case).
 
 ## iPad app (kiosk tablet)
 Native SwiftUI kiosk app in `ios/` — **iPad-only** (TARGETED_DEVICE_FAMILY=2). Source +
