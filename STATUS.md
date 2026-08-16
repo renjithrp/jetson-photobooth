@@ -49,8 +49,9 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
   865464360538-…, `drive.file` scope, folder `PhotoBooth`, share links on). Connect/reconnect
   recipe: Google only accepts localhost redirect URIs now → `ssh -N -L 8000:localhost:8000
   pb@<booth>` then Connect from `http://localhost:8000/admin` (network-independent).
-  ⚠ OAuth consent screen still "Testing" — refresh token dies after 7 days until the app is
-  published ("In production"; no review needed for drive.file).
+  OAuth app published to production 2026-08-16. ⚠ One step pending: reconnect Drive once
+  (Connect in admin) so the token is re-issued under production status — the current token
+  was minted during "Testing" and may still carry that mode's 7-day expiry.
 - **Google Drive guest opt-in**: ON and verified live — "Save to Drive" (iPad app + guest
   page) queues via the sync worker; per-photo dedup (a group shot uploads once).
 - **WhatsApp opt-in**: ON (collect-only), verified end-to-end. Admin send queue (admin →
@@ -62,8 +63,8 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
 - **Guest self-download (one-scan)**: photos selected on the iPad are announced as a
   pending download; joining the hotspot via the Wi-Fi QR pops the captive sheet onto
   /booth with a **server-side-rendered** "Your N photos are ready — Download" banner
-  (captive mini-browsers don't run JS). Enablers: probe-domain-only DNS hijack
-  (`captive-probe-hijack.conf` — guests keep real internet), the kiosk iPad's probes are
+  (captive mini-browsers don't run JS). Enablers: full DNS hijack (see Network table —
+  probe-only proved flaky on iOS), the kiosk iPad's probes are
   answered with "Success" so it never sees the sheet (reserved 192.168.50.203,
   BOOTH_KIOSK_IPS drop-in), captive proxy retries stale sockets after backend restarts.
   The direct-download QR remains as step-2 fallback.
