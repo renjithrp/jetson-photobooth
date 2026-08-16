@@ -87,8 +87,8 @@
 
   <div class="layer hidden" id="countdown"><div class="big" id="count">3</div></div>
 
-  <div class="layer scrim-bottom hidden" id="capturing"><div class="title">Smile! <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></div>
-    <div class="sub" id="shotinfo"></div></div>
+  <div class="layer scrim hidden" id="capturing"><div class="title">Smile — hold it! <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></div>
+    <div class="sub" id="shotinfo">Capturing…</div></div>
 
   <div class="layer scrim hidden" id="processing">
     <div class="spinner"></div><div class="sub">Working some magic…</div></div>
@@ -167,7 +167,11 @@ function show(name){
   // camera briefly streams a post-capture review image (and the MJPEG <img> holds
   // its last frame while the stream pauses), so without this the just-taken photo
   // flashes behind the spinner before the review screen appears.
-  L("preview").style.visibility = (name === "processing" || name === "review") ? "hidden" : "visible";
+  // Hide the live preview during the shot too: the Sony pauses live view while it
+  // autofocuses + captures + downloads (~3s), so leaving it visible showed a frozen
+  // frame. The "Smile — hold it!" screen covers that window cleanly instead.
+  L("preview").style.visibility =
+    (name === "capturing" || name === "processing" || name === "review") ? "hidden" : "visible";
   renderFaceZone();
 }
 function scheduleAttract(){
@@ -228,7 +232,7 @@ function onEvent(ev){
     case "idle": show("idle"); scheduleAttract(); break;
     case "countdown": clearTimeout(attractTimer); show("countdown"); L("count").textContent = ev.value; break;
     case "capturing":
-      show("capturing"); L("shotinfo").textContent = ev.total>1 ? `Shot 1 of ${ev.total}`:"";
+      show("capturing"); L("shotinfo").textContent = ev.total>1 ? `Shot 1 of ${ev.total}` : "Capturing…";
       flash(); break;
     case "shot":
       L("shotinfo").textContent = ev.total>1 ? `Shot ${ev.index} of ${ev.total}`:""; flash(); break;
