@@ -439,6 +439,22 @@ _SERVICES = {"photobooth", "photobooth-camera", "photobooth-captive",
 _ACTIONS = {"start", "stop", "restart"}
 
 
+@app.get("/api/system/services")
+async def service_states(_: None = Depends(require_auth)) -> dict:
+    """Active-state of each controllable unit (for the iPad admin's status list)."""
+    loop = asyncio.get_running_loop()
+
+    def states() -> dict:
+        out = {}
+        for svc in sorted(_SERVICES):
+            r = subprocess.run(["systemctl", "is-active", f"{svc}.service"],
+                               capture_output=True, text=True)
+            out[svc] = (r.stdout or "").strip() or "unknown"
+        return out
+
+    return await loop.run_in_executor(None, states)
+
+
 @app.post("/api/system/service")
 async def service_control(body: dict, _: None = Depends(require_auth)) -> dict:
     """Start/stop/restart booth services from the admin UI (app runs as root).

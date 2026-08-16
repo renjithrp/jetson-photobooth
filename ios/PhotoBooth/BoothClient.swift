@@ -215,6 +215,31 @@ final class BoothClient: ObservableObject {
         _ = await post("/api/download/announce", body: PhotosReq(photos: photos)) as R?
     }
 
+    // MARK: - system status / service control (admin)
+    func networkStatus() async -> NetworkStatus? { await get("/api/network/status") }
+
+    func serviceStates() async -> [String: String] {
+        (await get("/api/system/services") as [String: String]?) ?? [:]
+    }
+
+    func serviceAction(_ service: String, _ action: String) async -> OkResult {
+        (await post("/api/system/service", body: ["service": service, "action": action]) as OkResult?)
+            ?? OkResult(ok: false, error: "network error")
+    }
+
+    // MARK: - booth upstream Wi-Fi (admin)
+    func wifiScan() async -> [WifiNet] { (await get("/api/wifi/scan") as [WifiNet]?) ?? [] }
+
+    func wifiConnect(ssid: String, password: String) async -> OkResult {
+        (await post("/api/wifi/connect", body: ["ssid": ssid, "password": password]) as OkResult?)
+            ?? OkResult(ok: false, error: "network error")
+    }
+
+    func wifiForget(ssid: String) async -> OkResult {
+        (await post("/api/wifi/forget", body: ["ssid": ssid]) as OkResult?)
+            ?? OkResult(ok: false, error: "network error")
+    }
+
     // MARK: - admin
     func login(pin: String) async -> Bool {
         struct R: Decodable { let ok: Bool }

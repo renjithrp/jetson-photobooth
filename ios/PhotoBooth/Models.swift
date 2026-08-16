@@ -54,6 +54,30 @@ struct GallerySession: Decodable {
     let images: [String]
 }
 
+/// GET /api/network/status — booth-side connectivity (management Wi-Fi + hotspot).
+struct NetworkStatus: Decodable {
+    var internet: String? = nil          // full / limited / none / unknown
+    var mgmt_ssid: String? = nil         // upstream Wi-Fi the booth is joined to
+    struct Hotspot: Decodable { var active: Bool? = nil; var ssid: String? = nil }
+    var hotspot: Hotspot? = nil
+}
+
+/// One network from GET /api/wifi/scan.
+struct WifiNet: Decodable, Identifiable {
+    let ssid: String
+    var signal: Int? = nil
+    var security: String? = nil
+    var in_use: Bool? = nil
+    var id: String { ssid }
+}
+
+/// POST /api/system/service and /api/wifi/connect|forget result.
+struct OkResult: Decodable {
+    let ok: Bool
+    var error: String? = nil
+    var detached: Bool? = nil
+}
+
 /// The gesture-trigger block of /api/settings — everything the on-iPad tuning
 /// sheet edits. Field names mirror backend/models.py TriggerSettings exactly.
 struct TriggerConfig: Codable {
