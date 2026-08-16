@@ -16,6 +16,9 @@ struct GalleryView: View {
     @State private var message: String?
     @State private var showPhone = false
     @State private var phone = ""
+    @State private var viewer: ViewerStart?          // photo view (pager) start index
+
+    struct ViewerStart: Identifiable { let id: Int }
 
     private let cols = [GridItem(.adaptive(minimum: 104), spacing: 6)]
     private var shown: [String] { filter == nil ? all : all.filter { filter!.contains($0) } }
@@ -45,26 +48,38 @@ struct GalleryView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if filter == nil {
-                        Button { showCamera = true } label: { Label("Filter by selfie", systemImage: "person.crop.circle.badge.questionmark") }
-                    } else {
-                        Button("Show all") { filter = nil; selected = [] }
+                    HStack(spacing: 14) {
+                        if !shown.isEmpty {
+                            Button { viewer = ViewerStart(id: 0) } label: {
+                                Label("Photo view", systemImage: "rectangle.expand.vertical")
+                            }
+                        }
+                        if filter == nil {
+                            Button { showCamera = true } label: { Label("Filter by selfie", systemImage: "person.crop.circle.badge.questionmark") }
+                        } else {
+                            Button("Show all") { filter = nil; selected = [] }
+                        }
                     }
                 }
+            }
+            .fullScreenCover(item: $viewer) { v in
+                PhotoPagerView(photos: shown, selected: $selected, start: v.id)
             }
             .sheet(isPresented: $showCamera) {
                 ImagePicker(source: .camera, camera: .front) { data in
                     if let data { Task { await filterBySelfie(data) } }
                 }.ignoresSafeArea()
             }
-            .alert("Send to WhatsApp", isPresented: $showPhone) {
-                TextField("Phone incl. country code", text: $phone).keyboardType(.phonePad)
-                Button("Save") { Task { await optWhatsapp() } }
-                Button("Cancel", role: .cancel) {}
-            } message: { Text("We'll send your \(chosen.count) selected photo(s) via WhatsApp when the booth is online.") }
+            .sheet(isPresented: $showPhone) {
+                PhoneEntryView(photoCount: chosen.count) { num in
+                    phone = num
+                    Task { await optWhatsapp() }
+                }
+            }
             .task { await load() }
         }
-        .idleReturn()   // abandoned gallery returns to the live view
+        // abandoned gallery returns to the live view; paused while a child screen is up
+        .idleReturn(paused: showCamera || showPhone || viewer != nil)
     }
 
     private func cell(_ u: String) -> some View {
@@ -72,11 +87,19 @@ struct GalleryView: View {
             img.resizable().scaledToFill()
         } placeholder: { Color.gray.opacity(0.2) }
         .frame(width: 104, height: 104).clipped().cornerRadius(8)
-        .overlay(alignment: .topTrailing) {
-            Image(systemName: selected.contains(u) ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(selected.contains(u) ? .green : .white).padding(4)
+        .onTapGesture {                       // tap the photo -> open the zoomable viewer
+            if let i = shown.firstIndex(of: u) { viewer = ViewerStart(id: i) }
         }
-        .onTapGesture { if selected.contains(u) { selected.remove(u) } else { selected.insert(u) } }
+        .overlay(alignment: .topTrailing) {   // tap the circle -> select/unselect
+            Button {
+                if selected.contains(u) { selected.remove(u) } else { selected.insert(u) }
+            } label: {
+                Image(systemName: selected.contains(u) ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(selected.contains(u) ? .green : .white)
+                    .shadow(radius: 2).padding(6)
+            }.buttonStyle(.plain)
+        }
     }
 
     private var shareBar: some View {
@@ -129,7 +152,7 @@ struct GalleryView: View {
     }
 }
 
-private extension CharacterSet {
+extension CharacterSet {
     static let urlQueryValueAllowed: CharacterSet = {
         var cs = CharacterSet.urlQueryAllowed
         cs.remove(charactersIn: "&=?/")

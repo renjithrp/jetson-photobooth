@@ -1,3 +1,4 @@
+import CoreImage
 import SwiftUI
 import UIKit
 
@@ -21,6 +22,7 @@ struct GuestView: View {
     @State private var showPhonePanel = false
     @State private var waSaved = false
     @State private var driveSaved = false
+    @State private var viewer: GalleryView.ViewerStart?   // zoomable photo view
 
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 8)]
     private var chosen: [String] { photos.filter { selected.contains($0) } }
@@ -31,7 +33,8 @@ struct GuestView: View {
                 switch step {
                 case .choice:  choice
                 case .results: results
-                case .qr:      QRStepsView(onDone: { step = photos.isEmpty ? .choice : .results })
+                case .qr:      QRStepsView(downloadPhotos: chosen,
+                                           onDone: { step = photos.isEmpty ? .choice : .results })
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -46,8 +49,18 @@ struct GuestView: View {
                 if let data { Task { await find(data) } }
             }.ignoresSafeArea()
         }
+        .fullScreenCover(item: $viewer) { v in
+            PhotoPagerView(photos: photos, selected: $selected, start: v.id)
+        }
+        .sheet(isPresented: $showPhonePanel) {
+            PhoneEntryView(photoCount: chosen.count) { num in
+                phone = num
+                Task { await optWhatsapp() }
+            }
+        }
         .task { await booth.refresh() }   // pick up newly-enabled share options live
-        .idleReturn()
+        // pause while a child screen is up — it runs its own idle timer
+        .idleReturn(paused: showCamera || showPhonePanel || viewer != nil)
     }
 
     // MARK: - step 1: choice
@@ -70,7 +83,8 @@ struct GuestView: View {
     // MARK: - step 2: results + share choices
     private var results: some View {
         VStack(spacing: 14) {
-            Text("We found \(photos.count) photo\(photos.count == 1 ? "" : "s") of you 🎉")
+            Label("We found \(photos.count) photo\(photos.count == 1 ? "" : "s") of you",
+                  systemImage: "party.popper.fill")
                 .font(.largeTitle.bold()).padding(.top, 8)
             Text("Tap a photo to unselect it, then choose how to get them.")
                 .font(.callout).foregroundStyle(.secondary)
@@ -83,26 +97,15 @@ struct GuestView: View {
 
             if let m = message { Text(m).font(.headline).foregroundStyle(.green) }
 
-            if showPhonePanel {
-                HStack(spacing: 10) {
-                    TextField("Your WhatsApp number, incl. country code", text: $phone)
-                        .keyboardType(.phonePad).font(.title3)
-                        .padding(12).background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
-                    Button { Task { await optWhatsapp() } } label: {
-                        Text("Save").font(.title3.bold())
-                    }.buttonStyle(.borderedProminent).controlSize(.large).disabled(busy)
-                }.padding(.horizontal, 30)
-            }
-
             HStack(spacing: 14) {
                 if booth.options.whatsapp {
-                    actionButton(waSaved ? "WhatsApp ✓" : "Get on WhatsApp",
+                    actionButton(waSaved ? "WhatsApp saved" : "Get on WhatsApp",
                                  icon: "message.fill", done: waSaved, prominent: true) {
-                        showPhonePanel.toggle()
+                        showPhonePanel = true
                     }
                 }
                 if booth.options.drive_optin {
-                    actionButton(driveSaved ? "Drive ✓" : "Save to Google Drive",
+                    actionButton(driveSaved ? "Drive saved" : "Save to Google Drive",
                                  icon: "arrow.up.doc.fill", done: driveSaved) {
                         Task { await optDrive() }
                     }
@@ -122,13 +125,20 @@ struct GuestView: View {
             img.resizable().scaledToFill()
         } placeholder: { Color.gray.opacity(0.2) }
         .frame(width: 110, height: 110).clipped().cornerRadius(10)
-        .overlay(alignment: .topTrailing) {
-            Image(systemName: selected.contains(u) ? "checkmark.circle.fill" : "circle")
-                .font(.title3)
-                .foregroundStyle(selected.contains(u) ? .green : .white).padding(5)
-        }
         .opacity(selected.contains(u) ? 1 : 0.45)
-        .onTapGesture { if selected.contains(u) { selected.remove(u) } else { selected.insert(u) } }
+        .onTapGesture {                       // tap the photo -> zoomable viewer
+            if let i = photos.firstIndex(of: u) { viewer = GalleryView.ViewerStart(id: i) }
+        }
+        .overlay(alignment: .topTrailing) {   // tap the circle -> select/unselect
+            Button {
+                if selected.contains(u) { selected.remove(u) } else { selected.insert(u) }
+            } label: {
+                Image(systemName: selected.contains(u) ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(selected.contains(u) ? .green : .white)
+                    .shadow(radius: 2).padding(5)
+            }.buttonStyle(.plain)
+        }
     }
 
     // MARK: - buttons
@@ -204,25 +214,47 @@ struct AnyButtonStyle: PrimitiveButtonStyle {
 // MARK: - QR self-download steps
 
 /// Step-by-step self-download: 1) scan the Wi-Fi QR to join the booth network,
-/// 2) scan the photo QR to open the finder page on their phone.
+/// 2) scan the photo QR. When the guest already found their photos on the iPad,
+/// step 2 is a DIRECT download link for those photos (QR generated on-device) — no
+/// second selfie. Only without a prior selfie does it fall back to the finder page.
 struct QRStepsView: View {
     @EnvironmentObject var booth: BoothClient
+    var downloadPhotos: [String] = []
     var onDone: () -> Void
     @State private var info: WifiInfo?
     @State private var page = 0
+
+    /// Direct zip-download URL for the chosen photos, on the guest-facing base
+    /// (derived from find_url so it matches what phones on the hotspot can reach).
+    private var directURL: String? {
+        guard !downloadPhotos.isEmpty else { return nil }
+        let base = info?.find_url?.replacingOccurrences(of: "/booth", with: "")
+            ?? booth.url("").absoluteString
+        let qs = downloadPhotos.map {
+            "p=" + ($0.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? $0)
+        }.joined(separator: "&")
+        return base + "/api/download?" + qs
+    }
 
     var body: some View {
         VStack(spacing: 22) {
             if let info {
                 Text(page == 0 ? "Step 1 of 2 — Join the booth Wi-Fi"
-                               : "Step 2 of 2 — Open your photos")
+                               : (directURL != nil ? "Step 2 of 2 — Download your photos"
+                                                   : "Step 2 of 2 — Open your photos"))
                     .font(.largeTitle.bold())
 
                 if page == 0 {
-                    qr(info.join_qr, missing: "The booth Wi-Fi is off — ask the staff, or connect to \(info.ssid ?? "the booth network") manually.")
+                    qrImageView(Self.decode(info.join_qr),
+                                missing: "The booth Wi-Fi is off — ask the staff, or connect to \(info.ssid ?? "the booth network") manually.")
                     instruction("Open your phone's camera, point it at the code, and tap “Join Network”.")
+                } else if let direct = directURL {
+                    qrImageView(Self.qrCode(from: direct),
+                                missing: "Couldn't create the download code — ask the staff.")
+                    instruction("Scan with your phone's camera — your \(downloadPhotos.count) photo\(downloadPhotos.count == 1 ? "" : "s") download straight away.")
                 } else {
-                    qr(info.find_qr, missing: "The photo page isn't available right now — ask the staff.")
+                    qrImageView(Self.decode(info.find_qr),
+                                missing: "The photo page isn't available right now — ask the staff.")
                     instruction("Scan with your phone's camera and open the link — then take a selfie there to find and download your photos.")
                 }
 
@@ -250,9 +282,9 @@ struct QRStepsView: View {
         .task { info = await booth.wifiInfo() }
     }
 
-    private func qr(_ dataURI: String?, missing: String) -> some View {
+    private func qrImageView(_ img: UIImage?, missing: String) -> some View {
         Group {
-            if let img = Self.decode(dataURI) {
+            if let img {
                 Image(uiImage: img).resizable().interpolation(.none)
                     .frame(width: 320, height: 320)
                     .background(.white).cornerRadius(16).shadow(radius: 8)
@@ -273,5 +305,17 @@ struct QRStepsView: View {
         guard let uri, uri.hasPrefix("data:"), let comma = uri.firstIndex(of: ",") else { return nil }
         guard let d = Data(base64Encoded: String(uri[uri.index(after: comma)...])) else { return nil }
         return UIImage(data: d)
+    }
+
+    /// Generate a QR code on-device (CoreImage) for the direct-download link.
+    static func qrCode(from string: String) -> UIImage? {
+        guard let data = string.data(using: .utf8),
+              let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(data, forKey: "inputMessage")
+        // lower correction for long URLs keeps the code coarse enough to scan
+        filter.setValue(string.count > 900 ? "L" : "M", forKey: "inputCorrectionLevel")
+        guard let ci = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 12, y: 12)),
+              let cg = CIContext().createCGImage(ci, from: ci.extent) else { return nil }
+        return UIImage(cgImage: cg)
     }
 }
