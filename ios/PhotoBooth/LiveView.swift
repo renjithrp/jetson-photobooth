@@ -73,7 +73,8 @@ struct LiveView: UIViewRepresentable {
               const dw = iw*sc, dh = ih*sc, ox = (gc.width-dw)/2, oy = (gc.height-dh)/2;
               const P = p => [ox + (1-p[0])*dw, oy + p[1]*dh];      // stream is mirrored
               const tooSmall = ev.size_ok === false;
-              const col = ev.on_face ? '#f87171' : (ev.match && !tooSmall) ? '#4ade80' : '#fbbf24';
+              const col = ev.on_face ? '#f87171'
+                : (ev.match && !tooSmall && ev.near_face !== false) ? '#4ade80' : '#fbbf24';
               gx.strokeStyle = col; gx.fillStyle = col; gx.lineWidth = 3; gx.lineCap = 'round';
               for (const [a,b] of BONES){ const [x1,y1]=P(ev.lm[a]), [x2,y2]=P(ev.lm[b]);
                 gx.beginPath(); gx.moveTo(x1,y1); gx.lineTo(x2,y2); gx.stroke(); }
@@ -81,11 +82,13 @@ struct LiveView: UIViewRepresentable {
               const [wx,wy] = P(ev.lm[0]);
               const reason = ev.on_face ? 'rejected: looks like a face'
                 : tooSmall ? ('too small/far (' + Math.round(ev.span*100) + '% < ' + Math.round(ev.min_size*100) + '%) \\u2014 pose ignored')
+                : ev.near_face === false ? 'no face near the hand'
                 : !ev.in_frame ? 'hand not fully in frame'
                 : !ev.match ? ('pose \\u2260 ' + ev.want)
                 : ev.cooldown_left > 0 ? ('cooldown ' + ev.cooldown_left + 's')
                 : ev.want === 'wave' ? ('wave ' + (ev.swings||0) + '/3 swings')
                 : ev.hold_progress > 0 ? ('hold ' + (ev.hold_progress*ev.hold_need).toFixed(1) + '/' + ev.hold_need + 's')
+                : ev.confirming ? 'confirming\\u2026'
                 : ev.want + ' \\u2713';
               gx.font = '700 15px -apple-system'; gx.textAlign = 'center';
               const tw = gx.measureText(reason).width + 20;

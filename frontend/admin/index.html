@@ -201,6 +201,22 @@
         <div><label class="fld">Min hand size (frame fraction, 0 = any)</label>
           <input type="number" data-float step="0.02" data-path="trigger.hand_min_size"></div>
       </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Max hands tracked (1–4)</label>
+          <input type="number" data-path="trigger.max_hands"></div>
+        <div><label class="fld">Confirm frames before hold (1–10)</label>
+          <input type="number" data-path="trigger.confirm_frames"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Match ratio during hold (0–1)</label>
+          <input type="number" data-float step="0.05" data-path="trigger.match_ratio"></div>
+        <div><label class="fld">Hand size vs face height (0 = off)</label>
+          <input type="number" data-float step="0.05" data-path="trigger.hand_face_scale"></div>
+      </div>
+      <div class="grid2 mt-1">
+        <div><label class="fld">Max hand↔face distance (face-heights, 0 = off)</label>
+          <input type="number" data-float step="0.5" data-path="trigger.assoc_face_dist"></div>
+      </div>
       <div class="toggle mt-3">
         <div><div class="t-txt">Show detection overlay on the video</div>
           <div class="t-sub">Draws the live hand skeleton + why it did/didn't fire on the kiosk & iPad preview (debug — turn off for guests)</div></div>

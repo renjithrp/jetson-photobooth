@@ -88,6 +88,11 @@ struct TriggerConfig: Codable {
     var hand_min_size = 0.08
     var require_face = false
     var show_gesture_overlay = false
+    var max_hands = 1
+    var confirm_frames = 3
+    var match_ratio = 0.7
+    var hand_face_scale = 0.15
+    var assoc_face_dist = 3.0
 }
 
 /// GET /api/wifi/info — hotspot details + QR codes (data: URIs) for the guest

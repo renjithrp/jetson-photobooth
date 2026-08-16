@@ -63,6 +63,17 @@ struct TriggerTuneView: View {
                        $cfg.gesture_start_delay, 0...3, step: 0.25)
                 Toggle("Require a face in the zone", isOn: $cfg.require_face)
             }
+            Section("Advanced (subject-aware gates)") {
+                Stepper("Max hands tracked: \(cfg.max_hands)", value: $cfg.max_hands, in: 1...4)
+                Stepper("Confirm frames before hold: \(cfg.confirm_frames)",
+                        value: $cfg.confirm_frames, in: 1...10)
+                slider(String(format: "Match ratio during hold %.0f%%", cfg.match_ratio * 100),
+                       $cfg.match_ratio, 0...1, step: 0.05)
+                slider(String(format: "Hand size vs face height %.0f%% (0 = off)", cfg.hand_face_scale * 100),
+                       $cfg.hand_face_scale, 0...1, step: 0.05)
+                slider(String(format: "Max hand-face distance %.1f face-heights (0 = off)", cfg.assoc_face_dist),
+                       $cfg.assoc_face_dist, 0...10, step: 0.5)
+            }
         }
         .onChange(of: cfg.gesture_type) { _ in apply() }
         .onChange(of: cfg.gesture_hold_seconds) { _ in apply() }
@@ -71,6 +82,11 @@ struct TriggerTuneView: View {
         .onChange(of: cfg.gesture_start_delay) { _ in apply() }
         .onChange(of: cfg.require_face) { _ in apply() }
         .onChange(of: cfg.show_gesture_overlay) { _ in apply() }
+        .onChange(of: cfg.max_hands) { _ in apply() }
+        .onChange(of: cfg.confirm_frames) { _ in apply() }
+        .onChange(of: cfg.match_ratio) { _ in apply() }
+        .onChange(of: cfg.hand_face_scale) { _ in apply() }
+        .onChange(of: cfg.assoc_face_dist) { _ in apply() }
     }
 
     private func slider(_ label: String, _ v: Binding<Double>,

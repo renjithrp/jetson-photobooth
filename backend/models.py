@@ -46,6 +46,13 @@ class TriggerSettings(BaseModel):
     # observed false triggers spanned ~5% of frame; a real hand at booth distance
     # spans well above 8%. 0 disables the gate.
     hand_min_size: float = Field(0.08, ge=0, le=1)
+    # Advanced detection tuning (admin > gesture card; hot-reloaded by the worker).
+    # Defaults measured at the booth via the detection overlay.
+    max_hands: int = Field(1, ge=1, le=4)             # hands tracked at once (2+ = every hand is gated, best candidate wins)
+    confirm_frames: int = Field(3, ge=1, le=10)       # consecutive matching frames before the hold starts (jitter filter)
+    match_ratio: float = Field(0.7, ge=0.0, le=1.0)   # min matched share of frames across the hold window
+    hand_face_scale: float = Field(0.15, ge=0, le=1)  # min hand span as a fraction of face height (0 = off; falls back to hand_min_size)
+    assoc_face_dist: float = Field(3.0, ge=0, le=10)  # hand must be within this many face-heights of a face (0 = off)
     cooldown_seconds: float = Field(5.0, ge=0)       # ignore triggers right after a session
     # Face gating — require a face inside a target zone before a gesture counts.
     # Stops the booth firing when no one is actually standing in front of it.
