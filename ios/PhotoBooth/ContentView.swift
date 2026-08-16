@@ -4,7 +4,11 @@ struct ContentView: View {
     @EnvironmentObject var booth: BoothClient
     var body: some View {
         BoothView()
-            .task { await booth.connectAndRefresh(); await booth.checkAuth() }
+            .task {
+                await booth.connectAndRefresh()
+                await booth.checkAuth()
+                booth.startWatchdog()      // self-heal dropped Wi-Fi / booth connection
+            }
     }
 }
 

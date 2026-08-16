@@ -44,18 +44,21 @@ final class BoothClient: ObservableObject {
     /// The operator app talks to the backend on :8000 (full API). The booth's captive
     /// portal on :80 only exposes guest routes, so a bare host (no port) is normalized
     /// to :8000 — otherwise live view / trigger / admin / status all 404.
-    private var effectiveBase: String {
-        guard let u = URL(string: baseURL) else { return baseURL }
+    static func normalized(_ base: String) -> String {
+        guard let u = URL(string: base) else { return base }
         if u.port == nil, let h = u.host {
             return "\(u.scheme ?? "http")://\(h):8000"
         }
-        return baseURL
+        return base
     }
+
+    private var effectiveBase: String { Self.normalized(baseURL) }
 
     func url(_ path: String) -> URL { URL(string: effectiveBase + path)! }
 
     // MARK: - wi-fi
-    /// Join the booth hotspot (if auto-join is on), then refresh. Called on launch.
+    /// Join the booth hotspot (if auto-join is on), then refresh. Called on launch
+    /// and whenever the watchdog finds the booth unreachable.
     func connectAndRefresh() async {
         if wifiAuto {
             wifiMessage = "Connecting to \(wifiSSID)…"
@@ -66,6 +69,53 @@ final class BoothClient: ObservableObject {
             }
         }
         await refresh()
+    }
+
+    // MARK: - connectivity watchdog
+    private var watchdogTask: Task<Void, Never>?
+
+    /// Every ~12s: if the booth stops answering, re-join the hotspot and re-probe —
+    /// trying the stored address first, then the default hotspot address (in case the
+    /// stored one points at a network the iPad is no longer on). Self-heals dropped
+    /// Wi-Fi without anyone touching the iPad.
+    func startWatchdog() {
+        watchdogTask?.cancel()
+        watchdogTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(12))
+                guard let self, !Task.isCancelled else { return }
+                if await self.probe(self.baseURL) {
+                    await self.refresh()
+                    continue
+                }
+                if self.wifiAuto {
+                    _ = await WiFiManager.join(ssid: self.wifiSSID, passphrase: self.wifiPass)
+                }
+                for candidate in [self.baseURL, "http://192.168.50.1:8000"] {
+                    if await self.probe(candidate) {
+                        if candidate != self.baseURL { self.baseURL = candidate }
+                        break
+                    }
+                }
+                await self.refresh()
+            }
+        }
+    }
+
+    /// Short-timeout reachability check (separate session: no connectivity-waiting).
+    private lazy var probeSession: URLSession = {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 3
+        cfg.timeoutIntervalForResource = 4
+        cfg.waitsForConnectivity = false
+        return URLSession(configuration: cfg, delegate: TrustDelegate(host: host),
+                          delegateQueue: nil)
+    }()
+
+    private func probe(_ base: String) async -> Bool {
+        guard let u = URL(string: Self.normalized(base) + "/api/system/info") else { return false }
+        guard let (_, resp) = try? await probeSession.data(from: u) else { return false }
+        return (resp as? HTTPURLResponse)?.statusCode == 200
     }
 
     // MARK: - status / options

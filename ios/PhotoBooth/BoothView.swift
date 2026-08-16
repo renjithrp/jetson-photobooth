@@ -71,8 +71,12 @@ struct BoothView: View {
         .sheet(isPresented: $showAdmin, onDismiss: { liveReload += 1 }) { AdminView() }
         .sheet(isPresented: $showSettings, onDismiss: { liveReload += 1 }) { SettingsSheet() }
         .onChange(of: scenePhase) { phase in
-            // reconnect the stream + keep the screen awake (kiosk) whenever we're frontmost
-            if phase == .active { liveReload += 1; UIApplication.shared.isIdleTimerDisabled = true }
+            // reconnect Wi-Fi + booth + stream, keep the screen awake, on every foreground
+            if phase == .active {
+                liveReload += 1
+                UIApplication.shared.isIdleTimerDisabled = true
+                Task { await booth.connectAndRefresh() }
+            }
         }
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }   // never auto-lock in the booth
         .task { await loadThumb() }
