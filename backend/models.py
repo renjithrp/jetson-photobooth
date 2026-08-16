@@ -94,6 +94,8 @@ class GDriveDestination(BaseModel):
     rclone_remote: str = "gdrive"         # rclone.conf section name (app-managed)
     folder: str = "PhotoBooth"
     make_share_link: bool = True
+    auto_upload: bool = False             # upload EVERY capture to the flat event album
+                                          # (guests' Save-to-Drive opt-in works regardless)
     # OAuth configured entirely from the admin panel (see /api/gdrive/authorize).
     # Create an OAuth "Web application" client in Google Cloud, paste its id/secret,
     # click Connect — the refresh token lands in `token` (rclone JSON format).

@@ -149,6 +149,25 @@ def test_failed_capture_leaves_no_empty_session(admin):
     assert after == before          # failed capture cleaned its empty folder
 
 
+def test_auto_upload_enqueues_drive_job(admin):
+    from backend.sync import worker as sync_worker
+    admin.put("/api/settings", json={
+        "camera": {"backend": "mock"}, "preview": {"source": "mock"},
+        "storage": {"gdrive": {"enabled": True, "auto_upload": True}},
+        "timer": {"countdown_seconds": 0, "num_shots": 1, "review_seconds": 0}})
+    before = len([j for j in sync_worker.jobs if "gdrive" in j["dests"]])
+    assert admin.post("/api/capture").json()["ok"] is True
+    for _ in range(40):
+        gjobs = [j for j in sync_worker.jobs if "gdrive" in j["dests"]]
+        if len(gjobs) > before:
+            break
+        time.sleep(0.2)
+    assert len(gjobs) > before                      # capture queued a Drive upload
+    assert gjobs[-1].get("subdir") == ""            # flat event album, not a subfolder
+    # reset so later tests aren't affected
+    admin.put("/api/settings", json={"storage": {"gdrive": {"enabled": False, "auto_upload": False}}})
+
+
 def test_capture_flow_mock(admin):
     # mock camera + no countdown/review so the session completes fast
     admin.put("/api/settings", json={
