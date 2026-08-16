@@ -110,7 +110,7 @@ struct GuestView: View {
                         Task { await optDrive() }
                     }
                 }
-                actionButton("Download (QR)", icon: "qrcode") { step = .qr }
+                actionButton("Instant download to phone", icon: "qrcode") { step = .qr }
             }
             .disabled(busy || chosen.isEmpty)
             .padding(.bottom, 6)
