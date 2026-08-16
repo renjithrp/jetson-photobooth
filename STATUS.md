@@ -54,10 +54,12 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
 - **Clock guard**: captures hold up to 10 s for NTP sync after boot (no more 1969 sessions);
   failed captures remove their empty session folder.
 
-## iOS app (iPad / iPhone)
-Native SwiftUI kiosk app in `ios/` (source + XcodeGen spec; regenerate with `xcodegen
-generate`, build via `xcodebuild` — see `ios/README.md`). Installed on the iPad Air 11" and
-iPhone 13 Pro Max, dev-signed with team `J6QU4CTJD7`, bundle `com.renjithrp.photobooth`.
+## iPad app (kiosk tablet)
+Native SwiftUI kiosk app in `ios/` — **iPad-only** (TARGETED_DEVICE_FAMILY=2). Source +
+XcodeGen spec; regenerate with `xcodegen generate`, build via `xcodebuild` — see
+`ios/README.md`. Installed on the iPad Air 11", dev-signed with team `J6QU4CTJD7`,
+bundle `com.renjithrp.photobooth`. (An early iPhone install from testing can be deleted
+off the phone like any app.)
 - Full-screen camera-style booth screen: live view (WKWebView MJPEG, auto-reconnects after
   sheets/foreground), round shutter, ⋯ menu (Gallery / Admin / Settings / Reconnect),
   recent-photo gallery button, big "Get your photos" guest CTA.

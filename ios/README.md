@@ -1,6 +1,6 @@
-# PhotoBooth — iOS app (SwiftUI)
+# PhotoBooth — iPad app (SwiftUI)
 
-A native iPad/iPhone app for a staffed booth device: **live view + trigger**, guest
+A native **iPad-only** app for the booth's kiosk tablet: **live view + trigger**, guest
 **find-my-photos by selfie**, **WhatsApp / Google-Drive opt-in**, and a **PIN-gated
 admin** area with the WhatsApp send queue. It's a thin client over the booth's
 existing HTTP API — no booth-side changes are needed beyond what's already deployed.
