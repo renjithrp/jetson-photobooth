@@ -3,3 +3,5 @@ PhotoBooth.xcodeproj/
 build/
 DerivedData/
 *.xcuserstate
+PhotoBooth/Info.plist
+PhotoBooth/PhotoBooth.entitlements

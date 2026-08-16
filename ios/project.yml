@@ -21,6 +21,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.renjithrp.photobooth
+    entitlements:
+      path: PhotoBooth/PhotoBooth.entitlements
+      properties:
+        com.apple.developer.networking.HotspotConfiguration: true
     info:
       path: PhotoBooth/Info.plist
       properties:

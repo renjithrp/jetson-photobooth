@@ -20,7 +20,12 @@ import SwiftUI
 @MainActor
 final class BoothClient: ObservableObject {
     @AppStorage("boothBaseURL") var baseURL: String = "http://192.168.50.1"
+    // Auto-join the booth hotspot on launch (defaults match the booth's guest AP).
+    @AppStorage("wifiAuto") var wifiAuto: Bool = true
+    @AppStorage("wifiSSID") var wifiSSID: String = "PhotoBooth"
+    @AppStorage("wifiPass") var wifiPass: String = "booth1234"
 
+    @Published var wifiMessage: String?
     @Published var status: SystemInfo?
     @Published var options: ShareOptions = .init()
     @Published var isAdmin = false
@@ -37,6 +42,20 @@ final class BoothClient: ObservableObject {
     private var host: String { URL(string: baseURL)?.host ?? "" }
 
     func url(_ path: String) -> URL { URL(string: baseURL + path)! }
+
+    // MARK: - wi-fi
+    /// Join the booth hotspot (if auto-join is on), then refresh. Called on launch.
+    func connectAndRefresh() async {
+        if wifiAuto {
+            wifiMessage = "Connecting to \(wifiSSID)…"
+            if let err = await WiFiManager.join(ssid: wifiSSID, passphrase: wifiPass) {
+                wifiMessage = "Wi-Fi: \(err)"
+            } else {
+                wifiMessage = nil
+            }
+        }
+        await refresh()
+    }
 
     // MARK: - status / options
     func refresh() async {
