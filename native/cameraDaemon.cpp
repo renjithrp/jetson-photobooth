@@ -1,8 +1,10 @@
 // "get live view and OSD with http" sample
 #include "httplib.h"  // https://github.com/yhirose/cpp-httplib
 
+#include <arpa/inet.h>   // inet_addr for the Wi-Fi/network camera fallback
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <future>
@@ -674,27 +676,50 @@ int main(void)
     bool boolRet = SCRSDK::Init();
     if(!boolRet) GotoError("", 0);
 
-    // enumeration
+    // enumeration — USB first, with an optional Wi-Fi/network fallback
     {
         uint32_t count = 0;
         uint32_t index = 1;
 
         err = SCRSDK::EnumCameraObjects(&enumCameraObjectInfo, 3/*timeInSec*/);
-        if(err || !enumCameraObjectInfo) GotoError("no camera", err);
-
-        count = enumCameraObjectInfo->GetCount();
-        if(count >= 2) {
-            for (uint32_t i = 0; i < count; ++i) {
-                auto* info = enumCameraObjectInfo->GetCameraObjectInfo(i);
-                CrCout << '[' << i + 1 << "] " << _getModelId(info) << "\n";
+        if(err || !enumCameraObjectInfo) {
+            enumCameraObjectInfo = nullptr;
+            // Wi-Fi/network fallback: with the camera in "PC Remote > Wi-Fi" mode and
+            // joined to a network this host can reach (normally the booth's own
+            // hotspot), BOOTH_CAMERA_IP (+ BOOTH_CAMERA_MAC) let the daemon connect
+            // over the network when nothing enumerates on USB (dead cable/port).
+            const char* envIp  = std::getenv("BOOTH_CAMERA_IP");
+            const char* envMac = std::getenv("BOOTH_CAMERA_MAC");
+            if(!envIp || !*envIp) GotoError("no camera", err);
+            {
+                unsigned char mac[6] = {0, 0, 0, 0, 0, 0};
+                unsigned int b[6] = {0, 0, 0, 0, 0, 0};
+                if(envMac && 6 == std::sscanf(envMac, "%x:%x:%x:%x:%x:%x",
+                                              &b[0], &b[1], &b[2], &b[3], &b[4], &b[5])) {
+                    for(int i = 0; i < 6; ++i) mac[i] = (unsigned char)b[i];
+                }
+                std::cout << "[cameraDaemon] no USB camera - trying Wi-Fi fallback at "
+                          << envIp << "\n";
+                err = SCRSDK::CreateCameraObjectInfoEthernetConnection(
+                    &objInfo, SCRSDK::CrCameraDeviceModel_ILCE_7RM4A,
+                    (CrInt32u)inet_addr(envIp), mac, 0 /*this body has no SSH auth*/);
             }
+            if(err || !objInfo) GotoError("no camera (Wi-Fi fallback failed too)", err);
+        } else {
+            count = enumCameraObjectInfo->GetCount();
+            if(count >= 2) {
+                for (uint32_t i = 0; i < count; ++i) {
+                    auto* info = enumCameraObjectInfo->GetCameraObjectInfo(i);
+                    CrCout << '[' << i + 1 << "] " << _getModelId(info) << "\n";
+                }
 
-            std::string inputLine;
-            std::cout << "select camera:"; std::getline(std::cin, inputLine);
-            try { index = stoi(inputLine); } catch(const std::exception&) { GotoError("", 0); }
-            if(index < 1 || index > count) GotoError("", 0);
+                std::string inputLine;
+                std::cout << "select camera:"; std::getline(std::cin, inputLine);
+                try { index = stoi(inputLine); } catch(const std::exception&) { GotoError("", 0); }
+                if(index < 1 || index > count) GotoError("", 0);
+            }
+            objInfo = (SCRSDK::ICrCameraObjectInfo*)enumCameraObjectInfo->GetCameraObjectInfo(index - 1);
         }
-        objInfo = (SCRSDK::ICrCameraObjectInfo*)enumCameraObjectInfo->GetCameraObjectInfo(index - 1);
         m_modelId = _getModelId(objInfo);
     }
 
@@ -785,6 +810,7 @@ Error:
         serverThread->join();
     }
     if(enumCameraObjectInfo) enumCameraObjectInfo->Release();
+    else if(objInfo) objInfo->Release();   // Wi-Fi fallback objInfo is standalone
 
     if(m_connected) {
         std::promise<void> eventPromise;

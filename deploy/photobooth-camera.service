@@ -14,6 +14,12 @@ Type=simple
 WorkingDirectory=/opt/CrSDK/external/crsdk
 Environment=BOOTH_CAPTURE_DIR=/opt/photobooth/data/incoming
 Environment=BOOTH_KEEPALIVE_SEC=25
+# Wi-Fi/network camera fallback: when nothing enumerates on USB (dead cable/port)
+# the daemon connects to the camera over the network instead. Requires the camera
+# in "PC Remote > Wi-Fi" mode, joined to the booth hotspot, with its IP reserved in
+# captive-dnsmasq.conf. Uncomment and fill in to enable:
+#Environment=BOOTH_CAMERA_IP=192.168.50.20
+#Environment=BOOTH_CAMERA_MAC=aa:bb:cc:dd:ee:ff
 ExecStart=/opt/CrSDK/external/crsdk/cameraDaemon
 Restart=always
 RestartSec=3

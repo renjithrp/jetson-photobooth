@@ -53,6 +53,13 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
   (number, photo). Off-network delivery needs a public link (Drive/S3 or a public base URL).
 - **Clock guard**: captures hold up to 10 s for NTP sync after boot (no more 1969 sessions);
   failed captures remove their empty session folder.
+- **Camera Wi-Fi fallback (standby)**: cameraDaemon rebuilt on-device (busy-spin fix now
+  live) with a network fallback — if USB enumerates nothing and `BOOTH_CAMERA_IP`/`_MAC`
+  are set in photobooth-camera.service, it connects via
+  `CreateCameraObjectInfoEthernetConnection` (ILCE-7RM4A, no SSH). NOT yet activated:
+  needs the camera joined to the PhotoBooth hotspot in "PC Remote > Wi-Fi", a dnsmasq IP
+  reservation, and the env vars uncommented. Failover is manual-assisted (camera menu
+  selects USB vs Wi-Fi transport). Backup binary at external/crsdk/cameraDaemon.bak.
 
 ## iPad app (kiosk tablet)
 Native SwiftUI kiosk app in `ios/` — **iPad-only** (TARGETED_DEVICE_FAMILY=2). Source +
