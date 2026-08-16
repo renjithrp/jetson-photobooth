@@ -115,6 +115,24 @@ def test_pages_load(client):
         assert client.get(path).status_code == 200
 
 
+def test_capture_held_while_clock_unsynced(admin, monkeypatch):
+    # A cold-booted Jetson runs at the 1970 epoch until NTP syncs; capturing then
+    # produced 1969-stamped sessions. The session must refuse instead of capturing.
+    from backend import capture_service as cs
+    monkeypatch.setattr(cs, "CLOCK_MIN_YEAR", 9999)   # force "clock not synced"
+    monkeypatch.setattr(cs, "CLOCK_WAIT_S", 0)        # no grace wait in tests
+    admin.put("/api/settings", json={
+        "camera": {"backend": "mock"}, "preview": {"source": "mock"},
+        "timer": {"countdown_seconds": 0, "num_shots": 1, "review_seconds": 0}})
+    root = config.captures_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    before = {d.name for d in root.iterdir() if d.is_dir()}
+    assert admin.post("/api/capture").json()["ok"] is True     # accepted async…
+    time.sleep(1.0)
+    after = {d.name for d in root.iterdir() if d.is_dir()}
+    assert after == before                                     # …but nothing captured
+
+
 def test_capture_flow_mock(admin):
     # mock camera + no countdown/review so the session completes fast
     admin.put("/api/settings", json={

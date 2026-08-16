@@ -14,6 +14,16 @@ from . import config, processing, uploaders
 from .camera import CaptureError, daemon_capture, make_camera
 from .events import bus
 
+# Hold captures until the system clock is sane. After a cold boot the Jetson's
+# clock starts at the 1970 epoch until NTP syncs; capturing in that window
+# produced 1969-timestamped sessions/files (mis-sorted galleries, zip quirks).
+CLOCK_MIN_YEAR = 2025     # any "now" before this means NTP hasn't synced yet
+CLOCK_WAIT_S = 10         # grace period for NTP to land before giving up
+
+
+def _clock_synced() -> bool:
+    return datetime.now().year >= CLOCK_MIN_YEAR
+
 
 class CaptureService:
     def __init__(self, base_url_provider: Callable[[], str]) -> None:
@@ -65,6 +75,15 @@ class CaptureService:
     async def _session(self, source: str) -> None:
         s = config.load()
         loop = asyncio.get_running_loop()
+
+        if not _clock_synced():
+            for _ in range(CLOCK_WAIT_S):     # give NTP a moment — it often lands fast
+                await asyncio.sleep(1)
+                if _clock_synced():
+                    break
+            else:
+                raise CaptureError("The booth is still starting up (clock sync) — "
+                                   "please try again in a minute")
 
         session_id = "session_" + datetime.now().strftime("%Y%m%d_%H%M%S")
         sess_dir = config.captures_dir(s) / session_id
