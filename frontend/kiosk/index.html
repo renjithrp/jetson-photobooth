@@ -302,7 +302,7 @@ function drawGesture(ev){
   // status chip above the wrist + hold-progress ring
   const [wx,wy] = P(ev.lm[0]);
   const reason = ev.on_face ? "rejected: looks like a face"
-    : tooSmall ? `too small/far (${Math.round(ev.span*100)}% < ${Math.round(ev.min_size*100)}%)`
+    : tooSmall ? `too small/far (${Math.round(ev.span*100)}% < ${Math.round(ev.min_size*100)}%) — pose ignored`
     : !ev.in_frame ? "hand not fully in frame"
     : !ev.match ? `pose ≠ ${ev.want}`
     : ev.cooldown_left > 0 ? `cooldown ${ev.cooldown_left}s`

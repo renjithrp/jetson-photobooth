@@ -80,7 +80,7 @@ struct LiveView: UIViewRepresentable {
               for (const p of ev.lm){ const [x,y]=P(p); gx.beginPath(); gx.arc(x,y,4,0,7); gx.fill(); }
               const [wx,wy] = P(ev.lm[0]);
               const reason = ev.on_face ? 'rejected: looks like a face'
-                : tooSmall ? ('too small/far (' + Math.round(ev.span*100) + '% < ' + Math.round(ev.min_size*100) + '%)')
+                : tooSmall ? ('too small/far (' + Math.round(ev.span*100) + '% < ' + Math.round(ev.min_size*100) + '%) \\u2014 pose ignored')
                 : !ev.in_frame ? 'hand not fully in frame'
                 : !ev.match ? ('pose \\u2260 ' + ev.want)
                 : ev.cooldown_left > 0 ? ('cooldown ' + ev.cooldown_left + 's')
