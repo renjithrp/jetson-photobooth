@@ -494,7 +494,13 @@ async def faces_find(selfie: UploadFile = File(...)) -> dict:
         tmp.unlink(missing_ok=True)
     if not embs:
         return {"matched": False, "error": "no face detected — try again"}
-    return face_index.index.match(embs[0], s.faces.match_threshold)
+    res = face_index.index.match(embs[0], s.faces.match_threshold)
+    # Drop any matched photos whose files no longer exist (deleted sessions leave
+    # stale face-index entries), so guests never see broken/404 thumbnails.
+    if res.get("photos"):
+        res["photos"] = [u for u in res["photos"] if share.resolve_capture(u) is not None]
+        res["matched"] = bool(res["photos"])
+    return res
 
 
 # ---- guest sharing (thumbnails / zip download / email / links) -------------

@@ -45,3 +45,11 @@ struct PendingResponse: Decodable {
     let pending: [PendingRecipient]
     let count: Int
 }
+
+/// One capture session from GET /api/gallery (only real files on disk — deleted
+/// sessions never appear here).
+struct GallerySession: Decodable {
+    let session: String
+    let mtime: Double
+    let images: [String]
+}

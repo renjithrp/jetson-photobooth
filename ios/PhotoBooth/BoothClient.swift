@@ -82,6 +82,13 @@ final class BoothClient: ObservableObject {
         return (await post("/api/capture", body: [String: String]()) as R?)?.ok ?? false
     }
 
+    // MARK: - gallery
+    /// All photos on the booth, newest session first (real files only — no deleted).
+    func gallery() async -> [String] {
+        let sessions: [GallerySession] = await get("/api/gallery") ?? []
+        return sessions.sorted { $0.mtime > $1.mtime }.flatMap { $0.images }
+    }
+
     // MARK: - find my photos
     func findPhotos(selfieJPEG: Data) async -> FindResult {
         var req = URLRequest(url: url("/api/faces/find"))

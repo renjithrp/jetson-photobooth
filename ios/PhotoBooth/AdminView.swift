@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// PIN-gated admin: the WhatsApp send queue (send + mark sent). Extend with more
-/// admin controls as needed — the backend endpoints already exist.
-struct AdminTab: View {
+/// PIN-gated admin sheet: the WhatsApp send queue (send + mark sent).
+struct AdminView: View {
     @EnvironmentObject var booth: BoothClient
+    @Environment(\.dismiss) var dismiss
     @Environment(\.openURL) var openURL
     @State private var pin = ""
     @State private var pending: [PendingRecipient] = []
@@ -11,10 +11,10 @@ struct AdminTab: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if booth.isAdmin { console } else { gate }
-            }
-            .navigationTitle("Admin")
+            Group { if booth.isAdmin { console } else { gate } }
+                .navigationTitle("Admin")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } } }
         }
     }
 
@@ -33,21 +33,18 @@ struct AdminTab: View {
         List {
             Section("WhatsApp send queue") {
                 if pending.isEmpty {
-                    Text(loading ? "Loading…" : "No one waiting to be sent.")
-                        .foregroundStyle(.secondary)
+                    Text(loading ? "Loading…" : "No one waiting to be sent.").foregroundStyle(.secondary)
                 }
                 ForEach(pending) { r in
                     VStack(alignment: .leading, spacing: 8) {
                         Text("+\(r.phone) · \(r.count) photo\(r.count > 1 ? "s" : "")").font(.headline)
                         HStack {
-                            Button {
-                                if let u = URL(string: r.wa_link) { openURL(u) }
-                            } label: { Label("Open WhatsApp", systemImage: "message.fill") }
-                                .buttonStyle(.bordered)
+                            Button { if let u = URL(string: r.wa_link) { openURL(u) } } label: {
+                                Label("Open WhatsApp", systemImage: "message.fill")
+                            }.buttonStyle(.bordered)
                             Button(role: .destructive) {
                                 Task { _ = await booth.markSent(phone: r.phone); await reload() }
-                            } label: { Label("Mark sent", systemImage: "checkmark") }
-                                .buttonStyle(.bordered)
+                            } label: { Label("Mark sent", systemImage: "checkmark") }.buttonStyle(.bordered)
                         }
                     }.padding(.vertical, 4)
                 }
@@ -58,9 +55,5 @@ struct AdminTab: View {
         .task { await reload() }
     }
 
-    private func reload() async {
-        loading = true
-        pending = await booth.whatsappPending()
-        loading = false
-    }
+    private func reload() async { loading = true; pending = await booth.whatsappPending(); loading = false }
 }
