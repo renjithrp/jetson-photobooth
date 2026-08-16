@@ -57,7 +57,16 @@ def gesture_matches(gtype: str, lm) -> bool:
         # a curled finger as straight, but they always have a finger DOWN. Noise
         # tolerance is preserved where it was needed: a pinky that registers only
         # loosely extended (up but not clearly) still counts toward the four.
-        return count == 4 and clear >= 3
+        #
+        # RADIAL check on top of the y check: a camera-facing fist often gets its
+        # hidden fingertips hallucinated ABOVE the PIPs in y, but the tips stay
+        # near the knuckles. A straight finger's tip sits well beyond its MCP
+        # knuckle relative to the wrist (~0.8 hand-units); require 0.35+.
+        wrist = lm[0]
+        mcp = {8: 5, 12: 9, 16: 13, 20: 17}
+        straight = sum(1 for t, p in _FINGERS if ext(t, p, m) and
+                       _dist(lm[t], wrist) > _dist(lm[mcp[t]], wrist) + 0.35 * hand)
+        return count == 4 and straight >= 3
     if gtype == "fist":
         return count == 0 and not thumb_up
     if gtype == "peace":          # V sign ✌

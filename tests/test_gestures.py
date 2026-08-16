@@ -74,6 +74,18 @@ def test_open_palm_rejects_relaxed_hand():
     assert gesture_matches("wave", lm)
 
 
+def test_open_palm_rejects_camera_facing_fist():
+    # A fist pointed at the camera: MediaPipe hallucinates the hidden fingertips
+    # ABOVE the PIP joints in y (passing the vertical check), but the tips stay
+    # radially near the knuckles. The straight-finger radial check must reject it:
+    # tips at 0.34 are 0.32 hand-units above the PIPs (y passes) yet only 0.32
+    # hand-units beyond the MCP knuckles (< the 0.35 required for "straight").
+    lm = hand(True, True, True, True)
+    for tip in (8, 12, 16, 20):
+        lm[tip] = LM(0.5, 0.34)
+    assert not gesture_matches("open_palm", lm)
+
+
 def test_hand_fully_in_frame():
     # wrist at the very bottom edge (arm raised from below the frame) is fine —
     # only the fingertips must be visible
