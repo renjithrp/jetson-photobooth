@@ -115,7 +115,15 @@ def build_zip(files: list[Path]) -> Path:
     with zipfile.ZipFile(fd, "w", zipfile.ZIP_STORED) as z:
         for f in files:
             # session-prefixed name keeps multi-session downloads collision-free
-            z.write(f, arcname=str(f.relative_to(root)).replace("/", "_"))
+            arcname = str(f.relative_to(root)).replace("/", "_")
+            mtime = f.stat().st_mtime
+            if mtime < 315532800:            # pre-1980: photos captured before the
+                # Jetson's clock synced after boot carry a 1969 mtime, and zipfile
+                # raises "ZIP does not support timestamps before 1980" on them.
+                info = zipfile.ZipInfo(arcname, date_time=(1980, 1, 1, 0, 0, 0))
+                z.writestr(info, f.read_bytes())
+            else:
+                z.write(f, arcname=arcname)
     fd.close()
     return Path(fd.name)
 

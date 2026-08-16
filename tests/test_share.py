@@ -1,5 +1,6 @@
 """Guest sharing: thumbnails, ZIP download, email/link endpoints, path safety."""
 import io
+import os
 import zipfile
 
 from PIL import Image
@@ -53,6 +54,17 @@ def test_share_options_shape(client):
     assert set(j) == {"email", "links", "whatsapp", "drive_optin"}
     assert j["email"] is False          # not configured in tests
     assert j["whatsapp"] is False and j["drive_optin"] is False
+
+
+def test_download_zip_handles_pre1980_mtime(client):
+    # Photos captured before the Jetson's clock synced after boot carry a 1969
+    # mtime; zipfile refuses pre-1980 timestamps, which 500'd the whole download.
+    (url,) = _make_session("session_oldclock", 1)
+    os.utime(config.captures_dir() / "session_oldclock" / "photo_0.jpg", (0, 0))
+    r = client.get("/api/download?p=" + url)
+    assert r.status_code == 200
+    zf = zipfile.ZipFile(io.BytesIO(r.content))
+    assert len(zf.namelist()) == 1
 
 
 def test_whatsapp_optin_collect_and_admin_flow(admin):
