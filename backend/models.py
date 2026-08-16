@@ -69,6 +69,9 @@ class TriggerSettings(BaseModel):
     # iPad preview so mis-detections can be diagnosed at the booth (why a gesture
     # didn't fire: not fully in frame, wrong pose match, on-face rejection, hold reset).
     show_gesture_overlay: bool = False
+    # Live numbers panel (span/min/face/streak/ratio…) on the kiosk & iPad preview,
+    # for fine-tuning the gates above while watching real values. Debug only.
+    show_gesture_stats: bool = False
 
 
 class TimerSettings(BaseModel):

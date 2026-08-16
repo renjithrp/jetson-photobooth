@@ -64,6 +64,9 @@
 <body>
   <img id="preview" alt="">
   <canvas id="gestcanvas" style="position:fixed;inset:0;pointer-events:none;z-index:4"></canvas>
+  <div id="geststats" style="display:none;position:fixed;left:14px;top:14px;z-index:6;
+    font:600 1.15vw/1.5 ui-monospace,Menlo,monospace;background:#000b;color:#a7f3d0;
+    padding:10px 14px;border-radius:12px;white-space:pre;pointer-events:none"></div>
   <div id="facezone" class="hidden"><span>Stand here <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></span></div>
   <div class="flash" id="flash"></div>
 
@@ -173,7 +176,10 @@ function show(name){
   // frame. The "Smile — hold it!" screen covers that window cleanly instead.
   L("preview").style.visibility =
     (name === "capturing" || name === "processing" || name === "review") ? "hidden" : "visible";
-  if (name !== "attract" && name !== "idle" && name !== "countdown") clearGesture();
+  if (name !== "attract" && name !== "idle" && name !== "countdown"){
+    clearGesture();
+    L("geststats").style.display = "none";
+  }
   renderFaceZone();
 }
 function scheduleAttract(){
@@ -196,6 +202,8 @@ async function loadInfo(){
     mirror = s.preview.mirror !== false;
     gestureOverlay = !!(s.trigger && s.trigger.show_gesture_overlay);
     if (!gestureOverlay) clearGesture();
+    gestureStats = !!(s.trigger && s.trigger.show_gesture_stats);
+    if (!gestureStats) L("geststats").style.display = "none";
     L("preview").style.transform = mirror ? "scaleX(-1)" : "none";
     renderFaceZone();
     L("boothName").textContent = s.general.booth_name;
@@ -248,7 +256,10 @@ function onEvent(ev){
       else { L("qrwrap").style.display="none"; }
       break;
     case "error": show("error"); L("errmsg").textContent = ev.message||""; break;
-    case "gesture": if (gestureOverlay) drawGesture(ev); break;
+    case "gesture":
+      if (gestureOverlay) drawGesture(ev);
+      renderStats(ev);
+      break;
   }
 }
 function flash(){ const f=L("flash"); f.classList.add("on"); setTimeout(()=>f.classList.remove("on"),120); }
@@ -259,7 +270,26 @@ function flash(){ const f=L("flash"); f.classList.add("on"); setTimeout(()=>f.cl
 // a hold-progress ring, and a one-line reason — so you can SEE why a gesture
 // does or doesn't fire.
 let gestureOverlay = false;
+let gestureStats = false;
 let gestClearTimer = null;
+
+// Live numbers panel: the raw values behind every gate, so the thresholds in
+// admin (min size, face scale, confirm frames, match ratio…) can be tuned
+// against what the detector actually measures.
+function renderStats(ev){
+  const el = L("geststats");
+  const live = curState === "attract" || curState === "idle" || curState === "countdown";
+  if (!gestureStats || !live){ el.style.display = "none"; return; }
+  el.style.display = "block";
+  const pct = v => v == null ? "–" : Math.round(v*100) + "%";
+  const yn = v => v === true ? "✓" : v === false ? "✗" : "–";
+  el.textContent = !ev.hand ? "no hand" :
+`want ${ev.want}   hands ${ev.hands ?? 1}   score ${ev.score ?? "–"}
+span ${pct(ev.span)}   min ${pct(ev.min_size)}   face_h ${ev.face_h ? pct(ev.face_h) : "–"}
+pose ${yn(ev.match)}   size ${yn(ev.size_ok)}   in_frame ${yn(ev.in_frame)}
+near_face ${yn(ev.near_face)}   on_face ${ev.on_face ? "YES" : "no"}
+streak ${ev.streak ?? 0}   hold ${pct(ev.hold_progress)}   ratio ${pct(ev.hold_ratio)}   cooldown ${ev.cooldown_left ?? 0}s`;
+}
 // MediaPipe hand skeleton: landmark index pairs
 const HAND_BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],
   [10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];

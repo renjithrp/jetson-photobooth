@@ -88,6 +88,7 @@ struct TriggerConfig: Codable {
     var hand_min_size = 0.08
     var require_face = false
     var show_gesture_overlay = false
+    var show_gesture_stats = false
     var max_hands = 1
     var confirm_frames = 3
     var match_ratio = 0.7

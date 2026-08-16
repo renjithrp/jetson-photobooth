@@ -295,7 +295,8 @@ class GestureWorker:
             self._step_trigger(detected, gtype, lm, now, t, hold, cooldown)
             self._publish(gtype, lm, ev["gesture_ok"], ev["in_frame"], ev["on_face"],
                           face_ok, now, hold, cooldown, ev["span"], ev["size_ok"],
-                          ev["eff_min"], ev["near_face"])
+                          ev["eff_min"], ev["near_face"],
+                          face_h=face_h, hands=len(hands_lm or []), score=score)
         except Exception as e:
             _log(f"detect error: {e}")
 
@@ -399,7 +400,7 @@ class GestureWorker:
 
     def _publish(self, gtype, lm, gesture_ok, in_frame, on_face, face_ok,
                  now, hold, cooldown, span=0.0, size_ok=True, min_size=0.0,
-                 near_face=True) -> None:
+                 near_face=True, face_h=0.0, hands=0, score=0.0) -> None:
         """Push the detection verdict to the backend, which rebroadcasts it on the
         kiosk WebSocket bus — that's what the on-video gesture overlay draws. Sent
         per detection frame while a hand is visible, plus ONE clearing message when
@@ -430,6 +431,15 @@ class GestureWorker:
                                  if (self._hold_start and hold > 0) else 0.0,
                 "cooldown_left": round(cd_left, 1),
                 "swings": self._wave.swings if gtype == "wave" else None,
+                # tuning telemetry (for the on-screen stats panel)
+                "face_h": round(face_h, 3),
+                "hands": hands,
+                "score": round(score, 2),
+                "streak": self._streak,
+                "hold_ratio": round(self._hold_hits /
+                                    (self._hold_hits + self._hold_misses), 2)
+                              if self._hold_start and (self._hold_hits + self._hold_misses)
+                              else None,
             }
         try:
             req = urllib.request.Request(

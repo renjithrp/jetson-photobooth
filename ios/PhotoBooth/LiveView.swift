@@ -47,6 +47,9 @@ struct LiveView: UIViewRepresentable {
             align-items:center;justify-content:center;overflow:hidden">
             <img id="v" src="\(url.absoluteString)" style="max-width:100%;max-height:100%;transform:scaleX(-1)">
             <canvas id="g" style="position:fixed;inset:0;pointer-events:none"></canvas>
+            <div id="s" style="display:none;position:fixed;left:10px;top:10px;
+              font:600 12px/1.5 ui-monospace,Menlo,monospace;background:#000b;color:#a7f3d0;
+              padding:8px 12px;border-radius:10px;white-space:pre;pointer-events:none"></div>
             <script>
             // Gesture debug overlay (mirrors the kiosk): when the admin setting
             // trigger.show_gesture_overlay is on, poll the worker's verdict and draw
@@ -54,16 +57,34 @@ struct LiveView: UIViewRepresentable {
             const gc = document.getElementById('g'), gx = gc.getContext('2d');
             const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],
               [10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
-            let overlayOn = false;
+            let overlayOn = false, statsOn = false;
+            const sd = document.getElementById('s');
             async function pollCfg(){
               try { const s = await (await fetch('/api/settings')).json();
                     overlayOn = !!(s.trigger && s.trigger.show_gesture_overlay);
+                    statsOn = !!(s.trigger && s.trigger.show_gesture_stats);
                     if(!overlayOn) gx.clearRect(0,0,gc.width,gc.height);
+                    if(!statsOn) sd.style.display = 'none';
               } catch(e){} }
             pollCfg(); setInterval(pollCfg, 5000);
+            function stats(ev){
+              if (!statsOn){ sd.style.display = 'none'; return; }
+              sd.style.display = 'block';
+              const pct = v => v == null ? '-' : Math.round(v*100) + '%';
+              const yn = v => v === true ? 'Y' : v === false ? 'N' : '-';
+              sd.textContent = !ev.hand ? 'no hand' :
+                'want ' + ev.want + '  hands ' + (ev.hands ?? 1) + '  score ' + (ev.score ?? '-') + '\\n' +
+                'span ' + pct(ev.span) + '  min ' + pct(ev.min_size) + '  face_h ' + (ev.face_h ? pct(ev.face_h) : '-') + '\\n' +
+                'pose ' + yn(ev.match) + '  size ' + yn(ev.size_ok) + '  in_frame ' + yn(ev.in_frame) +
+                '  near_face ' + yn(ev.near_face) + '  on_face ' + (ev.on_face ? 'YES' : 'no') + '\\n' +
+                'streak ' + (ev.streak ?? 0) + '  hold ' + pct(ev.hold_progress) +
+                '  ratio ' + pct(ev.hold_ratio) + '  cooldown ' + (ev.cooldown_left ?? 0) + 's';
+            }
             setInterval(async () => {
-              if (!overlayOn) return;
+              if (!overlayOn && !statsOn) return;
               let ev; try { ev = await (await fetch('/api/gesture/state')).json(); } catch(e){ return; }
+              stats(ev);
+              if (!overlayOn) return;
               if (gc.width !== innerWidth || gc.height !== innerHeight){ gc.width = innerWidth; gc.height = innerHeight; }
               gx.clearRect(0,0,gc.width,gc.height);
               if (!ev.hand || !ev.lm || (Date.now()/1000 - (ev.t||0)) > 1.5) return;
