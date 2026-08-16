@@ -117,6 +117,9 @@ struct GalleryView: View {
 
     private var shareBar: some View {
         HStack {
+            Button { selected.removeAll() } label: { Label("Unselect all", systemImage: "xmark.circle") }
+                .buttonStyle(.bordered)
+            Spacer()
             Button { Task { await airdrop() } } label: { Label("AirDrop", systemImage: "square.and.arrow.up") }
                 .buttonStyle(.bordered)
             Button { download() } label: { Label("Download", systemImage: "square.and.arrow.down") }

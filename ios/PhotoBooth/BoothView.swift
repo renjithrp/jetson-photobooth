@@ -12,6 +12,7 @@ struct BoothView: View {
     @State private var showGallery = false
     @State private var showAdmin = false
     @State private var showSettings = false
+    @State private var showTune = false
     @State private var triggering = false
     @State private var recentThumb: String?
     @State private var liveReload = 0        // bump to force the MJPEG stream to reconnect
@@ -40,6 +41,7 @@ struct BoothView: View {
                     Spacer()
                     Menu {
                         Button { showGallery = true } label: { Label("Gallery", systemImage: "photo.on.rectangle") }
+                        Button { showTune = true } label: { Label("Gesture tuning", systemImage: "hand.raised") }
                         Button { showAdmin = true } label: { Label("Admin", systemImage: "lock.shield") }
                         Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
                         Button { Task { await reconnect() } } label: { Label("Reconnect", systemImage: "arrow.clockwise") }
@@ -82,6 +84,10 @@ struct BoothView: View {
         .sheet(isPresented: $showGallery, onDismiss: { liveReload += 1; Task { await loadThumb() } }) { GalleryView() }
         .sheet(isPresented: $showAdmin, onDismiss: { liveReload += 1 }) { AdminView() }
         .sheet(isPresented: $showSettings, onDismiss: { liveReload += 1 }) { SettingsSheet() }
+        // half-height so the live view + detection overlay stay visible while tuning
+        .sheet(isPresented: $showTune, onDismiss: { liveReload += 1 }) {
+            TriggerTuneView().presentationDetents([.medium, .large])
+        }
         .onChange(of: scenePhase) { phase in
             // reconnect Wi-Fi + booth + stream, keep the screen awake, on every foreground
             if phase == .active {
@@ -139,7 +145,14 @@ struct BoothView: View {
         triggering = true
         _ = await booth.trigger()
         try? await Task.sleep(for: .seconds(6))     // countdown + capture + process
-        await booth.refresh()
+        // Poll until the session actually ends (processing/review can outlast the
+        // 6s guess; the watchdog only refreshes every ~12s, which left the shutter
+        // stuck on "busy" long after the capture finished).
+        for _ in 0..<15 {
+            await booth.refresh()
+            if booth.status?.busy != true { break }
+            try? await Task.sleep(for: .seconds(2))
+        }
         await loadThumb()
         triggering = false
     }

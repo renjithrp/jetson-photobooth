@@ -36,8 +36,20 @@ def test_open_palm():
 
 
 def test_open_palm_tolerates_one_noisy_finger():
-    # pinky landmark noise at booth distance: 3 clearly-extended fingers still count
-    assert gesture_matches("open_palm", hand(True, True, True, False))
+    # pinky landmark noise at booth distance: the pinky reads only LOOSELY
+    # extended (above its PIP, but not clearly) — still an open palm as long as
+    # the other three are near-straight.
+    lm = hand(True, True, True, False)
+    lm[20] = LM(0.5, 0.45)          # pip at 0.5: up, but not by the 0.30 margin
+    assert gesture_matches("open_palm", lm)
+
+
+def test_open_palm_rejects_finger_count_poses():
+    # Deliberate non-palm poses always have a finger fully DOWN — they must not
+    # read as an open palm even when three fingers are dead straight.
+    assert not gesture_matches("open_palm", hand(True, True, True, False))   # "three"
+    assert not gesture_matches("open_palm", hand(True, True, False, False))  # "peace"
+    assert not gesture_matches("open_palm", hand(True, False, False, True))  # "rock"
 
 
 def test_open_palm_rejects_half_open_hand():

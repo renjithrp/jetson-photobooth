@@ -88,7 +88,8 @@
   <div class="hint" id="hint"></div>
 
   <div class="count" id="count" style="display:none"></div>
-  <div class="selhint" id="selhint" style="display:none">Tap photos to select — then download or share below.</div>
+  <div class="selhint" id="selhint" style="display:none">Tap photos to select — then download or share below.
+    <a href="#" id="selToggle" style="font-weight:700;text-decoration:underline;color:inherit">Unselect all</a></div>
   <div class="grid" id="grid"></div>
 
   <footer id="foot">Your photos download as one file. On iPhone they land in Files; open the ZIP to save to Photos.</footer>
@@ -224,8 +225,17 @@ L("grid").addEventListener("click", e => {
   syncBar();
 });
 
+L("selToggle").onclick = e => {
+  e.preventDefault();
+  if (SEL.size) SEL.clear(); else SEL = new Set(PHOTOS);
+  document.querySelectorAll("#grid .ph").forEach(ph =>
+    ph.classList.toggle("sel", SEL.has(ph.dataset.u)));
+  syncBar();
+};
+
 function syncBar() {
   const n = SEL.size;
+  L("selToggle").textContent = n ? "Unselect all" : "Select all";
   L("dlLbl").textContent = n ? `Download (${n})` : "Download";
   L("dlBtn").disabled = !n;
   L("waBtn").disabled = !n;

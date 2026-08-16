@@ -49,7 +49,15 @@ def gesture_matches(gtype: str, lm) -> bool:
         # mid-swing tilted palm compresses the projected vertical gaps.
         m = 0.15 if gtype == "wave" else 0.30
         clear = sum(ext(t, p, m) for t, p in _FINGERS)
-        return clear >= 3
+        if gtype == "wave":
+            return clear >= 3
+        # open_palm additionally requires ALL FOUR fingers at least up (tips above
+        # PIPs). That's what rejects deliberate non-palm poses: peace/three/rock
+        # can read as "3 clearly extended" when the low-res landmarks extrapolate
+        # a curled finger as straight, but they always have a finger DOWN. Noise
+        # tolerance is preserved where it was needed: a pinky that registers only
+        # loosely extended (up but not clearly) still counts toward the four.
+        return count == 4 and clear >= 3
     if gtype == "fist":
         return count == 0 and not thumb_up
     if gtype == "peace":          # V sign ✌

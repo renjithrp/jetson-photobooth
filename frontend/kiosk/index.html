@@ -173,6 +173,7 @@ function show(name){
   // frame. The "Smile — hold it!" screen covers that window cleanly instead.
   L("preview").style.visibility =
     (name === "capturing" || name === "processing" || name === "review") ? "hidden" : "visible";
+  if (name !== "attract" && name !== "idle" && name !== "countdown") clearGesture();
   renderFaceZone();
 }
 function scheduleAttract(){
@@ -267,6 +268,11 @@ function clearGesture(){
   c.getContext("2d").clearRect(0,0,c.width,c.height);
 }
 function drawGesture(ev){
+  // Only over the LIVE preview — never on top of the captured-photo screens
+  // (capturing/processing/review show the shot, not the camera).
+  if (curState !== "attract" && curState !== "idle" && curState !== "countdown"){
+    clearGesture(); return;
+  }
   const c = L("gestcanvas");
   if (c.width !== window.innerWidth || c.height !== window.innerHeight){
     c.width = window.innerWidth; c.height = window.innerHeight;

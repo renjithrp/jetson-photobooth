@@ -54,6 +54,18 @@ struct GallerySession: Decodable {
     let images: [String]
 }
 
+/// The gesture-trigger block of /api/settings — everything the on-iPad tuning
+/// sheet edits. Field names mirror backend/models.py TriggerSettings exactly.
+struct TriggerConfig: Codable {
+    var gesture_type = "open_palm"
+    var gesture_hold_seconds = 1.5
+    var gesture_start_delay = 0.0
+    var cooldown_seconds = 5.0
+    var hand_min_size = 0.08
+    var require_face = false
+    var show_gesture_overlay = false
+}
+
 /// GET /api/wifi/info — hotspot details + QR codes (data: URIs) for the guest
 /// self-download flow: join_qr joins the booth Wi-Fi, find_qr opens the photo finder.
 struct WifiInfo: Decodable {

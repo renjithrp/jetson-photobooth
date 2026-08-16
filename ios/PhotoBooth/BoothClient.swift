@@ -144,6 +144,24 @@ final class BoothClient: ObservableObject {
         return (await post("/api/focus", body: [String: String]()) as R?)?.ok ?? false
     }
 
+    // MARK: - gesture trigger tuning (admin)
+    func triggerConfig() async -> TriggerConfig? {
+        struct S: Decodable { let trigger: TriggerConfig }
+        return (await get("/api/settings") as S?)?.trigger
+    }
+
+    /// PUT the trigger block (deep-merged server-side). Requires the admin session
+    /// cookie (login(pin:)). The gesture worker hot-reloads it within ~3s.
+    func saveTrigger(_ t: TriggerConfig) async -> Bool {
+        struct Body: Encodable { let trigger: TriggerConfig }
+        var req = URLRequest(url: url("/api/settings"))
+        req.httpMethod = "PUT"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONEncoder().encode(Body(trigger: t))
+        guard let (_, resp) = try? await session.data(for: req) else { return false }
+        return (resp as? HTTPURLResponse)?.statusCode == 200
+    }
+
     // MARK: - wifi info (QR self-download flow)
     func wifiInfo() async -> WifiInfo? { await get("/api/wifi/info") }
 
