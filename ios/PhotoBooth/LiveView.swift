@@ -72,13 +72,15 @@ struct LiveView: UIViewRepresentable {
               const sc = Math.min(gc.width/iw, gc.height/ih);       // contain fit
               const dw = iw*sc, dh = ih*sc, ox = (gc.width-dw)/2, oy = (gc.height-dh)/2;
               const P = p => [ox + (1-p[0])*dw, oy + p[1]*dh];      // stream is mirrored
-              const col = ev.on_face ? '#f87171' : ev.match ? '#4ade80' : '#fbbf24';
+              const tooSmall = ev.size_ok === false;
+              const col = ev.on_face ? '#f87171' : (ev.match && !tooSmall) ? '#4ade80' : '#fbbf24';
               gx.strokeStyle = col; gx.fillStyle = col; gx.lineWidth = 3; gx.lineCap = 'round';
               for (const [a,b] of BONES){ const [x1,y1]=P(ev.lm[a]), [x2,y2]=P(ev.lm[b]);
                 gx.beginPath(); gx.moveTo(x1,y1); gx.lineTo(x2,y2); gx.stroke(); }
               for (const p of ev.lm){ const [x,y]=P(p); gx.beginPath(); gx.arc(x,y,4,0,7); gx.fill(); }
               const [wx,wy] = P(ev.lm[0]);
               const reason = ev.on_face ? 'rejected: looks like a face'
+                : tooSmall ? ('too small/far (' + Math.round(ev.span*100) + '% < ' + Math.round(ev.min_size*100) + '%)')
                 : !ev.in_frame ? 'hand not fully in frame'
                 : !ev.match ? ('pose \\u2260 ' + ev.want)
                 : ev.cooldown_left > 0 ? ('cooldown ' + ev.cooldown_left + 's')

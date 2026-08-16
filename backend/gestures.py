@@ -132,6 +132,16 @@ def hand_fully_in_frame(lm, margin: float = 0.02) -> bool:
                for i in (4, 8, 12, 16, 20))
 
 
+def hand_span(lm) -> float:
+    """Size of the hand as a fraction of the frame: the larger dimension of the
+    landmark bounding box. Used to reject MediaPipe's tiny-hand hallucinations
+    (patterns in the background mis-read as a far-away hand) — a real guest's
+    hand at booth distance spans well over ~8% of the frame."""
+    xs = [p.x for p in lm]
+    ys = [p.y for p in lm]
+    return max(max(xs) - min(xs), max(ys) - min(ys))
+
+
 # ---------------------------------------------------------------------------
 # Face-zone gating: require a detected face inside a target region before a
 # gesture is allowed to fire. Region is a normalised box (x, y, w, h) in 0..1.

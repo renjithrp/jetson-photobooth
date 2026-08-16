@@ -216,9 +216,14 @@ class GestureWorker:
             # min_detection_confidence instead.
             in_frame = bool(hands_lm) and \
                 gestures.hand_fully_in_frame(hands_lm[0].landmark)
+            # Size gate: MediaPipe hallucinates tiny "hands" on background patterns
+            # (observed ~5% of frame) — a real hand at booth distance is far larger.
+            span = gestures.hand_span(hands_lm[0].landmark) if hands_lm else 0.0
+            min_size = float(getattr(t, "hand_min_size", 0.0))
+            size_ok = span >= min_size
             gesture_ok = in_frame and \
                 gestures.gesture_matches(gtype, hands_lm[0].landmark)
-            detected = gesture_ok
+            detected = gesture_ok and size_ok
 
             face_ok = None
             on_face = False
@@ -238,14 +243,14 @@ class GestureWorker:
                 if gtype == "wave":
                     extra += f" swings={self._wave.swings}"
                 _log(f"hand: want={gtype} match={gesture_ok} score={score:.2f} "
-                     f"in_frame={in_frame} on_face={on_face} in_zone={face_ok} "
-                     f"-> fire={detected}{extra}")
+                     f"in_frame={in_frame} span={span:.2f} size_ok={size_ok} "
+                     f"on_face={on_face} in_zone={face_ok} -> fire={detected}{extra}")
 
             hold = float(getattr(t, "gesture_hold_seconds", 1.5))
             cooldown = float(getattr(t, "cooldown_seconds", 5.0))
             self._step_trigger(detected, gtype, hands_lm, now, t, hold, cooldown)
             self._publish(gtype, hands_lm, gesture_ok, in_frame, on_face, face_ok,
-                          now, hold, cooldown)
+                          now, hold, cooldown, span, size_ok, min_size)
         except Exception as e:
             _log(f"detect error: {e}")
 
@@ -288,7 +293,7 @@ class GestureWorker:
             _log(f"detect error: {e}")
 
     def _publish(self, gtype, hands_lm, gesture_ok, in_frame, on_face, face_ok,
-                 now, hold, cooldown) -> None:
+                 now, hold, cooldown, span=0.0, size_ok=True, min_size=0.0) -> None:
         """Push the detection verdict to the backend, which rebroadcasts it on the
         kiosk WebSocket bus — that's what the on-video gesture overlay draws. Sent
         per detection frame while a hand is visible, plus ONE clearing message when
@@ -307,6 +312,9 @@ class GestureWorker:
                 "lm": [[round(p.x, 4), round(p.y, 4)] for p in hands_lm[0].landmark],
                 "match": bool(gesture_ok),
                 "in_frame": bool(in_frame),
+                "span": round(span, 3),
+                "size_ok": bool(size_ok),
+                "min_size": min_size,
                 "on_face": bool(on_face),
                 "face_in_zone": face_ok,
                 "hold_need": hold,

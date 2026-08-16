@@ -41,6 +41,11 @@ class TriggerSettings(BaseModel):
                           "any_hand"] = "open_palm"
     gesture_hold_seconds: float = Field(1.5, ge=0)   # how long the gesture must be held
     gesture_start_delay: float = Field(0.0, ge=0)    # extra delay after detect before countdown
+    # Reject hands smaller than this fraction of the frame (larger bbox dimension).
+    # Filters MediaPipe's tiny-hand hallucinations on background patterns — the
+    # observed false triggers spanned ~5% of frame; a real hand at booth distance
+    # spans well above 8%. 0 disables the gate.
+    hand_min_size: float = Field(0.08, ge=0, le=1)
     cooldown_seconds: float = Field(5.0, ge=0)       # ignore triggers right after a session
     # Face gating — require a face inside a target zone before a gesture counts.
     # Stops the booth firing when no one is actually standing in front of it.

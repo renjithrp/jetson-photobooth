@@ -16,7 +16,7 @@ import urllib.request
 from typing import Callable, Optional
 
 from .gestures import (WaveDetector, any_face_in_zone, gesture_matches,
-                       hand_fully_in_frame, hand_on_face, thumb_debug)
+                       hand_fully_in_frame, hand_on_face, hand_span, thumb_debug)
 from .models import Settings
 
 
@@ -212,8 +212,11 @@ class SonyFrameHub:
                     score = 0.0
             in_frame = bool(hands_lm) and \
                 hand_fully_in_frame(hands_lm[0].landmark)
+            # size gate: reject tiny-hand hallucinations (kept in sync with gesture_worker)
+            size_ok = (not hands_lm) or \
+                hand_span(hands_lm[0].landmark) >= float(getattr(t, "hand_min_size", 0.0))
             gesture_ok = in_frame and self._matches(hands_lm[0].landmark)
-            detected = gesture_ok
+            detected = gesture_ok and size_ok
             # When face gating is on we reject the ONE robust false-trigger case: a face
             # mis-read as a hand (palm centre sitting on a detected face) — that's what was
             # actually "firing with no one present". We deliberately do NOT also require a
