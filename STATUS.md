@@ -41,10 +41,34 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
 | Captive portal | — | `:80` reverse-proxy, **pass-through mode** (guests keep internet; reach photos by scanning the on-screen QR → opens in real browser). `share.base_url = http://192.168.50.1` |
 
 ## Feature state
-- **Trigger**: gesture, `open_palm` (detects from distance: ≥3 fingers, lowered thresholds). Arduino button wired.
+- **Trigger**: gesture, `wave` (open palm swung side-to-side, 3 alternating swings ≈ waving
+  twice; ~20 fps sampling for wave, 6 fps for static poses). Arduino button wired.
 - **Face grouping**: ON (CUDA). **AI background**: OFF. **Gaze correction**: OFF (measure-only scaffold).
 - **Printing** (CUPS): OFF.
-- **Cloud uploads**: gdrive/S3/FTP all OFF (configured from admin → Sharing; Drive uses in-browser OAuth).
+- **Cloud uploads**: S3/FTP OFF. **Google Drive is guest-opt-in** (default OFF per photo;
+  uploads once per photo no matter how many guests opt a group shot in). Drive itself still
+  needs the admin OAuth connect before the opt-in button appears to guests.
+- **WhatsApp opt-in**: ON (collect-only) — guests leave a number + photos; admin sends via
+  wa.me from the send queue (admin → Sharing, or the iOS app) and marks sent. Deduped per
+  (number, photo). Off-network delivery needs a public link (Drive/S3 or a public base URL).
+- **Clock guard**: captures hold up to 10 s for NTP sync after boot (no more 1969 sessions);
+  failed captures remove their empty session folder.
+
+## iOS app (iPad / iPhone)
+Native SwiftUI kiosk app in `ios/` (source + XcodeGen spec; regenerate with `xcodegen
+generate`, build via `xcodebuild` — see `ios/README.md`). Installed on the iPad Air 11" and
+iPhone 13 Pro Max, dev-signed with team `J6QU4CTJD7`, bundle `com.renjithrp.photobooth`.
+- Full-screen camera-style booth screen: live view (WKWebView MJPEG, auto-reconnects after
+  sheets/foreground), round shutter, ⋯ menu (Gallery / Admin / Settings / Reconnect),
+  recent-photo gallery button, big "Get your photos" guest CTA.
+- Guest flow: selfie → matched photos → WhatsApp (dedicated big-keypad number screen) /
+  Drive opt-in / direct-download QR (zip link QR generated on-device — no second selfie).
+  QR self-download steps: Wi-Fi join QR then photo QR, with instructions.
+- Gallery: all real photos, selfie filter, tile + full-photo view with pinch/double-tap zoom.
+- Kiosk behaviors: auto-joins the booth hotspot on open (NEHotspotConfiguration), screen
+  never auto-locks, 10 s idle → cancellable 5 s countdown (with mini live view + "Go to
+  camera") unwinds to the booth screen.
+- Talks to the backend on **:8000** (the captive :80 only exposes guest routes).
 
 ## Key changes (2026-08-15 session)
 Apport disabled (`enabled=0` in `/etc/default/apport`, service stopped + disabled) so crash
@@ -74,8 +98,29 @@ controller when the Sony is missing from USB after a reboot (stale PC-Remote ses
     CrSDK rebuild); control/guest/kiosk UI: direct-download gallery, kiosk preview reconnects
     on clean stream-end, guest re-fetches share options per find; misleading no-op admin
     knobs removed (Sony transfer size, keep-local).
-  - Test suite 70 green on-device. NOTE: not yet verified with a real Sony capture through
-    the rewritten pipeline; native busy-spin fix awaits a `boothCapture`/daemon rebuild.
+  - Test suite green on-device (80+). Real Sony capture verified through the rewritten
+    pipeline (60 MP JPEG, byte-identical no-effects path). Native busy-spin fix still
+    awaits a `boothCapture`/daemon rebuild.
+
+## Key changes (2026-08-15 session — guest sharing + iOS app)
+- **Gesture worker settings bug fixed**: it could never read the root-owned settings.json
+  (PermissionError silently pinned it to `open_palm`, ignoring ALL trigger config). Now
+  loads the trigger block from the backend API. Wave tuned (0.4 hand-lengths/swing, 1.5 s
+  idle, ~20 fps sampling) and kiosk prompts "Wave 👋 to start!".
+- **Consent + dedup engine** (`backend/consent.py`, persisted to `data/consent.json`):
+  WhatsApp collect-only opt-in and per-photo Google Drive opt-in; a photo is never
+  delivered twice on either channel (group photos upload/send once). New guest endpoints
+  (`/api/share/whatsapp`, `/api/share/drive` — captive-allowlisted) + admin send queue
+  (`/api/consent/whatsapp/*`, wa.me links, mark-sent) with UI in admin → Sharing. Drive
+  excluded from the automatic per-session upload (opt-in only). Guest web page gained the
+  opt-in buttons.
+- **iOS app built and installed** (see section above): booth screen, guest flow, QR
+  self-download, gallery + zoom, PIN admin, auto Wi-Fi join, idle return, keep-awake.
+- **Data hygiene**: `faces/find` filters photos whose files were deleted (no 404 matches);
+  zip download clamps pre-1980 file timestamps (1969-mtime photos 500'd the whole zip);
+  captures hold for NTP sync (no new 1969 sessions); the 5 old `session_19691231_*`
+  sessions renamed to `session_20260815_00xx00` with face-index/consent remapped; failed
+  captures clean up their empty folder (6 existing empties removed).
 
 ## Key changes (2026-07-08 session)
 Kiosk fullscreen (wmctrl) · gesture worker + distance tuning · gaze scaffold · OOM fix (zram+swap) · jetson_clocks · 1080p render + drop TensorRT EP · fix intermittent numpy/cv2 face-grouping race · kiosk hide-preview-during-processing · Google Drive (OAuth) + S3 uploads · captive Wi-Fi (AP IP fix, http/https auto-detect, pass-through default).
