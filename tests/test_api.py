@@ -133,6 +133,22 @@ def test_capture_held_while_clock_unsynced(admin, monkeypatch):
     assert after == before                                     # …but nothing captured
 
 
+def test_failed_capture_leaves_no_empty_session(admin):
+    # Sony backend with a missing binary -> CaptureError after the session dir is
+    # created; the empty folder must be cleaned up, not left in the gallery.
+    admin.put("/api/settings", json={
+        "camera": {"backend": "sony", "capture_binary": "/nonexistent/boothCapture"},
+        "preview": {"source": "mock"},
+        "timer": {"countdown_seconds": 0, "num_shots": 1, "review_seconds": 0}})
+    root = config.captures_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    before = {d.name for d in root.iterdir() if d.is_dir()}
+    assert admin.post("/api/capture").json()["ok"] is True
+    time.sleep(1.0)
+    after = {d.name for d in root.iterdir() if d.is_dir()}
+    assert after == before          # failed capture cleaned its empty folder
+
+
 def test_capture_flow_mock(admin):
     # mock camera + no countdown/review so the session completes fast
     admin.put("/api/settings", json={

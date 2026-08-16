@@ -89,29 +89,39 @@ class CaptureService:
         sess_dir = config.captures_dir(s) / session_id
         sess_dir.mkdir(parents=True, exist_ok=True)
 
-        # countdown
-        for n in range(s.timer.countdown_seconds, 0, -1):
-            bus.publish({"type": "countdown", "value": n, "source": source})
-            await asyncio.sleep(1)
+        try:
+            # countdown
+            for n in range(s.timer.countdown_seconds, 0, -1):
+                bus.publish({"type": "countdown", "value": n, "source": source})
+                await asyncio.sleep(1)
 
-        # capture (blocking -> executor)
-        bus.publish({"type": "capturing", "total": s.timer.num_shots})
+            # capture (blocking -> executor)
+            bus.publish({"type": "capturing", "total": s.timer.num_shots})
 
-        def on_shot(i: int) -> None:
-            bus.publish({"type": "shot", "index": i, "total": s.timer.num_shots})
-            if s.timer.num_shots > 1:
-                # brief inter-shot pause is handled by the camera; nudge the UI
+            def on_shot(i: int) -> None:
+                bus.publish({"type": "shot", "index": i, "total": s.timer.num_shots})
+                if s.timer.num_shots > 1:
+                    # brief inter-shot pause is handled by the camera; nudge the UI
+                    pass
+
+            # Unified daemon: when the Sony camera is also the live-view source, capture
+            # via its /capture endpoint (one shared session — live view just pauses briefly).
+            if s.camera.backend == "sony" and s.preview.source == "sony_http":
+                shots = await loop.run_in_executor(
+                    None, lambda: daemon_capture(s, sess_dir, s.timer.num_shots, on_shot))
+            else:
+                cam = make_camera(s)
+                shots = await loop.run_in_executor(
+                    None, lambda: cam.capture(sess_dir, s.timer.num_shots, on_shot))
+        except BaseException:
+            # A failed (or cancelled) capture must not leave an empty session folder
+            # cluttering the gallery ordering and pruning.
+            try:
+                if sess_dir.is_dir() and not any(sess_dir.iterdir()):
+                    sess_dir.rmdir()
+            except OSError:
                 pass
-
-        # Unified daemon: when the Sony camera is also the live-view source, capture
-        # via its /capture endpoint (one shared session — live view just pauses briefly).
-        if s.camera.backend == "sony" and s.preview.source == "sony_http":
-            shots = await loop.run_in_executor(
-                None, lambda: daemon_capture(s, sess_dir, s.timer.num_shots, on_shot))
-        else:
-            cam = make_camera(s)
-            shots = await loop.run_in_executor(
-                None, lambda: cam.capture(sess_dir, s.timer.num_shots, on_shot))
+            raise
 
         # processing
         bus.publish({"type": "processing"})
