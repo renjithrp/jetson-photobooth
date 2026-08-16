@@ -39,7 +39,7 @@ struct SettingsSheet: View {
         NavigationStack {
             Form {
                 Section("Booth address") {
-                    TextField("http://192.168.50.1", text: $text)
+                    TextField("http://192.168.50.1:8000", text: $text)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .keyboardType(.URL)
                 }

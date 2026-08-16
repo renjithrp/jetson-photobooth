@@ -19,7 +19,7 @@ import SwiftUI
 ///   GET  /api/consent/whatsapp/pending, POST /api/consent/whatsapp/sent (admin)
 @MainActor
 final class BoothClient: ObservableObject {
-    @AppStorage("boothBaseURL") var baseURL: String = "http://192.168.50.1"
+    @AppStorage("boothBaseURL") var baseURL: String = "http://192.168.50.1:8000"
     // Auto-join the booth hotspot on launch (defaults match the booth's guest AP).
     @AppStorage("wifiAuto") var wifiAuto: Bool = true
     @AppStorage("wifiSSID") var wifiSSID: String = "PhotoBooth"
@@ -41,7 +41,18 @@ final class BoothClient: ObservableObject {
 
     private var host: String { URL(string: baseURL)?.host ?? "" }
 
-    func url(_ path: String) -> URL { URL(string: baseURL + path)! }
+    /// The operator app talks to the backend on :8000 (full API). The booth's captive
+    /// portal on :80 only exposes guest routes, so a bare host (no port) is normalized
+    /// to :8000 — otherwise live view / trigger / admin / status all 404.
+    private var effectiveBase: String {
+        guard let u = URL(string: baseURL) else { return baseURL }
+        if u.port == nil, let h = u.host {
+            return "\(u.scheme ?? "http")://\(h):8000"
+        }
+        return baseURL
+    }
+
+    func url(_ path: String) -> URL { URL(string: effectiveBase + path)! }
 
     // MARK: - wi-fi
     /// Join the booth hotspot (if auto-join is on), then refresh. Called on launch.
