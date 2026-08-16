@@ -107,6 +107,7 @@ class GestureWorker:
     # landmark span reads 0.6-0.9 of the face bbox height; hallucinated
     # background "hands" read <=0.43 of it — hand_face_scale 0.45 splits them.
     ABS_MIN_FLOOR = 0.05   # the face-scaled size gate never drops below this
+    ZOOM_FACE_H = 0.18     # face smaller than this -> run Hands on a subject crop
 
     def __init__(self) -> None:
         self.base = _detect_backend()
@@ -118,7 +119,8 @@ class GestureWorker:
         # cooldown filter the remaining weak detections.
         self._max_hands = max(1, int(getattr(self.trigger, "max_hands", 1)))
         self._hands = self._make_hands(self._max_hands)
-        self._face = None  # lazily created when require_face is on
+        self._face = None      # short-range face model (lazy)
+        self._face_far = None  # full-range fallback for distant subjects (lazy)
         self._hold_start: float | None = None
         self._wave = gestures.WaveDetector()
         self._last_detected = 0.0
@@ -165,6 +167,13 @@ class GestureWorker:
             self._face = mp.solutions.face_detection.FaceDetection(
                 model_selection=0, min_detection_confidence=0.5)
         return self._face
+
+    def _far_face_detector(self):
+        # full-range model (~5m) for when the short-range one gives out
+        if self._face_far is None:
+            self._face_far = mp.solutions.face_detection.FaceDetection(
+                model_selection=1, min_detection_confidence=0.4)
+        return self._face_far
 
     # ---- MJPEG reader -> detection -------------------------------------------
     def run(self) -> None:
@@ -226,36 +235,77 @@ class GestureWorker:
                 return
             rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             t = self.trigger
-            res = self._hands.process(rgb)
-            hands_lm = res.multi_hand_landmarks
-            score = 0.0
-            if hands_lm and res.multi_handedness:
-                try:
-                    score = res.multi_handedness[0].classification[0].score
-                except Exception:
-                    score = 0.0
             gtype = getattr(t, "gesture_type", "open_palm")
-            # NOTE: `score` is the left/right HANDEDNESS confidence (>=0.5 by
-            # construction whenever a hand is found) — logged for debugging but
-            # not gated on; detection confidence is enforced by the Hands()
-            # min_detection_confidence instead.
 
-            # ---- per-frame face pass: the subject's face size calibrates the hand
-            # size gate, anchors the hand to a person, and feeds the on-face and
-            # in-zone checks. Runs only while a hand is present (cheap at ~6fps).
-            faces = []
-            if hands_lm:
+            # ---- face pass FIRST: the subject's face size calibrates the hand
+            # size gate, anchors the hand to a person, and drives the far-subject
+            # zoom below. Face detection is cheap at ~6fps.
+            try:
+                faces = self._face_detector().process(rgb).detections or []
+            except Exception:
+                faces = []
+            face_fix = 1.0
+            if not faces:
+                # Far subject: the short-range face model gives out around ~2.5m,
+                # which also disabled the zoom crop exactly when it was needed.
+                # The full-range model reaches ~5m; its boxes read about HALF the
+                # size of the short-range ones, so x2 keeps the hand_face_scale
+                # calibration intact.
                 try:
-                    faces = self._face_detector().process(rgb).detections or []
+                    faces = self._far_face_detector().process(rgb).detections or []
+                    face_fix = 2.0
                 except Exception:
                     faces = []
             # A face bbox can exceed the frame (partially-out-of-frame face reads
             # height > 1.0) — that's not a usable subject-size reference, so treat
             # oversized boxes as "no calibration" and fall back to hand_min_size.
             face_h = max((f.location_data.relative_bounding_box.height
-                          for f in faces), default=0.0)
+                          for f in faces), default=0.0) * face_fix
             if face_h > 0.9:
                 face_h = 0.0
+
+            # ---- far subject: MediaPipe's palm detector downscales its input to
+            # ~192px, so a distant hand simply vanishes below its resolution. When
+            # the subject's face reads small, run Hands on a crop around the face
+            # (hands are raised near the head) — an effective 2-4x zoom — and map
+            # the landmarks back to full-frame coordinates afterwards.
+            zoom = None
+            if 0 < face_h < self.ZOOM_FACE_H:
+                bb = max((f.location_data.relative_bounding_box for f in faces),
+                         key=lambda b: b.height)
+                cx = bb.xmin + bb.width / 2
+                x0, x1 = max(0.0, cx - 3.0 * face_h), min(1.0, cx + 3.0 * face_h)
+                y0, y1 = max(0.0, bb.ymin - 2.5 * face_h), min(1.0, bb.ymin + 3.0 * face_h)
+                H, W = rgb.shape[:2]
+                px0, px1 = int(x0 * W), int(x1 * W)
+                py0, py1 = int(y0 * H), int(y1 * H)
+                if px1 - px0 > 40 and py1 - py0 > 40:
+                    zoom = (x0, y0, x1 - x0, y1 - y0)
+            if zoom:
+                res = self._hands.process(
+                    np.ascontiguousarray(rgb[py0:py1, px0:px1]))
+            else:
+                res = self._hands.process(rgb)
+            hands_lm = res.multi_hand_landmarks
+
+            def _pts(hl):
+                """Landmarks in full-frame normalized coords (remaps zoom crops)."""
+                if not zoom:
+                    return list(hl.landmark)
+                zx, zy, zw, zh = zoom
+                return [SimpleNamespace(x=zx + p.x * zw, y=zy + p.y * zh)
+                        for p in hl.landmark]
+
+            score = 0.0
+            if hands_lm and res.multi_handedness:
+                try:
+                    score = res.multi_handedness[0].classification[0].score
+                except Exception:
+                    score = 0.0
+            # NOTE: `score` is the left/right HANDEDNESS confidence (>=0.5 by
+            # construction whenever a hand is found) — logged for debugging but
+            # not gated on; detection confidence is enforced by the Hands()
+            # min_detection_confidence instead.
 
             # Evaluate EVERY tracked hand (trigger.max_hands) and act on the best
             # candidate: a fully passing hand wins; otherwise the largest hand is
@@ -269,10 +319,11 @@ class GestureWorker:
             best = None
             for i, hl in enumerate(hands_lm or []):
                 handed = labels[i] if i < len(labels) else None
-                ev = self._eval_hand(hl.landmark, t, gtype, faces, face_h, handed)
+                pts = _pts(hl)
+                ev = self._eval_hand(pts, t, gtype, faces, face_h, handed)
                 key = (ev["detected"], ev["span"])
                 if best is None or key > best[0]:
-                    best = (key, ev, hl.landmark)
+                    best = (key, ev, pts)
             if best is None:
                 lm, ev = None, {"in_frame": False, "span": 0.0, "eff_min": 0.0,
                                 "size_ok": True, "near_face": True, "on_face": False,
@@ -292,7 +343,8 @@ class GestureWorker:
                 if gtype == "wave":
                     extra += f" swings={self._wave.swings}"
                 _log(f"hand: want={gtype} hands={len(hands_lm or [])} "
-                     f"face_h={face_h:.2f} match={ev['gesture_ok']} score={score:.2f} "
+                     f"face_h={face_h:.2f} zoom={bool(zoom)} "
+                     f"match={ev['gesture_ok']} score={score:.2f} "
                      f"in_frame={ev['in_frame']} span={ev['span']:.2f} "
                      f"min={ev['eff_min']:.2f} size_ok={ev['size_ok']} "
                      f"near_face={ev['near_face']} on_face={ev['on_face']} "
@@ -306,7 +358,7 @@ class GestureWorker:
                           face_ok, now, hold, cooldown, ev["span"], ev["size_ok"],
                           ev["eff_min"], ev["near_face"],
                           face_h=face_h, hands=len(hands_lm or []), score=score,
-                          palm=ev.get("palm"))
+                          palm=ev.get("palm"), zoom=bool(zoom))
         except Exception as e:
             _log(f"detect error: {e}")
 
@@ -411,7 +463,8 @@ class GestureWorker:
 
     def _publish(self, gtype, lm, gesture_ok, in_frame, on_face, face_ok,
                  now, hold, cooldown, span=0.0, size_ok=True, min_size=0.0,
-                 near_face=True, face_h=0.0, hands=0, score=0.0, palm=None) -> None:
+                 near_face=True, face_h=0.0, hands=0, score=0.0, palm=None,
+                 zoom=False) -> None:
         """Push the detection verdict to the backend, which rebroadcasts it on the
         kiosk WebSocket bus — that's what the on-video gesture overlay draws. Sent
         per detection frame while a hand is visible, plus ONE clearing message when
@@ -435,6 +488,7 @@ class GestureWorker:
                 "min_size": round(min_size, 3),
                 "near_face": bool(near_face),
                 "palm": palm,
+                "zoom": bool(zoom),
                 "confirming": self._hold_start is None and self._streak > 0,
                 "on_face": bool(on_face),
                 "face_in_zone": face_ok,

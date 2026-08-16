@@ -201,6 +201,14 @@
         <div><label class="fld">Min hand size (frame fraction, 0 = any)</label>
           <input type="number" data-float step="0.02" data-path="trigger.hand_min_size"></div>
       </div>
+      <div class="mt-3">
+        <label class="fld">Distance preset (fills the gates below — Save to apply)</label>
+        <div class="flex gap-2 mt-1">
+          <button type="button" class="btn btn-ghost btn-xs" onclick="gesturePreset('near')">📷 Near (~1–1.5 m)</button>
+          <button type="button" class="btn btn-ghost btn-xs" onclick="gesturePreset('mid')">🧍 Mid (~2–3 m)</button>
+          <button type="button" class="btn btn-ghost btn-xs" onclick="gesturePreset('far')">🏃 Far (3 m+)</button>
+        </div>
+      </div>
       <div class="grid2 mt-1">
         <div><label class="fld">Max hands tracked (1–4)</label>
           <input type="number" data-path="trigger.max_hands"></div>
@@ -742,6 +750,27 @@ function collect(){
   });
   return out;
 }
+// Distance presets for the gesture gates (24-70mm booth lens). Values follow
+// how the measurements scale with distance: closer subject = bigger face/hand
+// (stricter absolute size), farther = smaller + noisier landmarks (lower
+// confirm/ratio so flicker doesn't eat genuine holds; zoom crop kicks in).
+const GESTURE_PRESETS = {
+  near: { hand_min_size: 0.12, hand_face_scale: 0.45, assoc_face_dist: 3.0,
+          confirm_frames: 3, match_ratio: 0.7 },
+  mid:  { hand_min_size: 0.08, hand_face_scale: 0.45, assoc_face_dist: 4.0,
+          confirm_frames: 3, match_ratio: 0.7 },
+  far:  { hand_min_size: 0.04, hand_face_scale: 0.40, assoc_face_dist: 5.0,
+          confirm_frames: 2, match_ratio: 0.6 },
+};
+function gesturePreset(name){
+  const p = GESTURE_PRESETS[name];
+  for (const [k, v] of Object.entries(p)){
+    const el = $(`[data-path="trigger.${k}"]`);
+    if (el) el.value = v;
+  }
+  toast(`Preset "${name}" filled in — hit Save to apply`);
+}
+
 async function save(){
   $("#saveBtn").textContent="Saving…";
   const r = await fetch("/api/settings",{method:"PUT",headers:{"Content-Type":"application/json"},

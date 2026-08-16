@@ -65,6 +65,18 @@ struct TriggerTuneView: View {
                        $cfg.gesture_start_delay, 0...3, step: 0.25)
                 Toggle("Require a face in the zone", isOn: $cfg.require_face)
             }
+            Section("Distance preset") {
+                HStack {
+                    Button("📷 Near") { preset(min: 0.12, scale: 0.45, assoc: 3, confirm: 3, ratio: 0.7) }
+                    Spacer()
+                    Button("🧍 Mid") { preset(min: 0.08, scale: 0.45, assoc: 4, confirm: 3, ratio: 0.7) }
+                    Spacer()
+                    Button("🏃 Far") { preset(min: 0.04, scale: 0.40, assoc: 5, confirm: 2, ratio: 0.6) }
+                }
+                .buttonStyle(.bordered)
+                Text("Fills the gates below for the subject's distance from the 24–70; applies immediately. Far range also engages the automatic subject zoom.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
             Section("Advanced (subject-aware gates)") {
                 Stepper("Max hands tracked: \(cfg.max_hands)", value: $cfg.max_hands, in: 1...4)
                 Stepper("Confirm frames before hold: \(cfg.confirm_frames)",
@@ -99,6 +111,15 @@ struct TriggerTuneView: View {
             Text(label).font(.subheadline)
             Slider(value: v, in: range, step: step)
         }
+    }
+
+    private func preset(min: Double, scale: Double, assoc: Double,
+                        confirm: Int, ratio: Double) {
+        cfg.hand_min_size = min
+        cfg.hand_face_scale = scale
+        cfg.assoc_face_dist = assoc
+        cfg.confirm_frames = confirm
+        cfg.match_ratio = ratio          // onChange fires -> debounced apply
     }
 
     // MARK: - load / debounced apply

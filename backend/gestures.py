@@ -29,16 +29,17 @@ def palm_side(lm, handed) -> bool | None:
     """True = palm toward the camera, False = back of the hand, None = unknown.
 
     The wrist -> index-MCP x pinky-MCP cross product's sign flips between palm
-    and back; which sign means "palm" depends on which hand it is. `handed` is
-    MediaPipe's label, whose convention assumes a MIRRORED selfie image — our
-    frames are raw (not mirrored), so the label is anatomically swapped:
-    'Left' here is the subject's right hand. In a raw frame the subject's right
-    palm (thumb pointing to their right = image left) gives z > 0."""
+    and back; which sign means "palm" depends on which hand it is, via
+    MediaPipe's handedness label. Sign convention CALIBRATED EMPIRICALLY at the
+    booth on the raw (non-mirrored) stream: the docs describe the labels as
+    selfie-mirrored, but the deployed stack (mediapipe 0.10, raw frames)
+    behaves un-swapped — first cut had it inverted (palm rejected, back
+    accepted); this orientation is the verified-correct one."""
     if handed not in ("Left", "Right"):
         return None
     z = ((lm[5].x - lm[0].x) * (lm[17].y - lm[0].y)
          - (lm[5].y - lm[0].y) * (lm[17].x - lm[0].x))
-    return (z > 0) if handed == "Left" else (z < 0)
+    return (z < 0) if handed == "Left" else (z > 0)
 
 
 def gesture_matches(gtype: str, lm, handed=None) -> bool:

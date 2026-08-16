@@ -75,7 +75,7 @@ struct LiveView: UIViewRepresentable {
               sd.textContent = !ev.hand ? ('no hand' + (ev.tune_mode ? '  [TUNE MODE]' : '')) :
                 'want ' + ev.want + '  hands ' + (ev.hands ?? 1) + '  score ' + (ev.score ?? '-') +
                 (ev.tune_mode ? '  [TUNE MODE]' : '') + '\\n' +
-                'span ' + pct(ev.span) + '  min ' + pct(ev.min_size) + '  face_h ' + (ev.face_h ? pct(ev.face_h) : '-') + '\\n' +
+                'span ' + pct(ev.span) + '  min ' + pct(ev.min_size) + '  face_h ' + (ev.face_h ? pct(ev.face_h) : '-') + '  zoom ' + (ev.zoom ? 'Y' : '-') + '\\n' +
                 'pose ' + yn(ev.match) + '  palm ' + yn(ev.palm) + '  size ' + yn(ev.size_ok) + '  in_frame ' + yn(ev.in_frame) +
                 '  near_face ' + yn(ev.near_face) + '  on_face ' + (ev.on_face ? 'YES' : 'no') + '\\n' +
                 'streak ' + (ev.streak ?? 0) + '  hold ' + pct(ev.hold_progress) +
