@@ -5,16 +5,18 @@ import SwiftUI
 /// bottom-left showing the most recent photo.
 struct BoothView: View {
     @EnvironmentObject var booth: BoothClient
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showGallery = false
     @State private var showAdmin = false
     @State private var showSettings = false
     @State private var triggering = false
     @State private var recentThumb: String?
+    @State private var liveReload = 0        // bump to force the MJPEG stream to reconnect
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            LiveView(url: booth.url("/api/preview/stream")).ignoresSafeArea()
+            LiveView(url: booth.url("/api/preview/stream"), reloadID: liveReload).ignoresSafeArea()
 
             // top bar: status (left) + ⋯ menu (right)
             VStack {
@@ -48,9 +50,12 @@ struct BoothView: View {
             .padding()
         }
         .statusBarHidden(true)
-        .sheet(isPresented: $showGallery, onDismiss: { Task { await loadThumb() } }) { GalleryView() }
-        .sheet(isPresented: $showAdmin) { AdminView() }
-        .sheet(isPresented: $showSettings) { SettingsSheet() }
+        .sheet(isPresented: $showGallery, onDismiss: { liveReload += 1; Task { await loadThumb() } }) { GalleryView() }
+        .sheet(isPresented: $showAdmin, onDismiss: { liveReload += 1 }) { AdminView() }
+        .sheet(isPresented: $showSettings, onDismiss: { liveReload += 1 }) { SettingsSheet() }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { liveReload += 1 }   // reconnect the stream on foreground
+        }
         .task { await loadThumb() }
     }
 
