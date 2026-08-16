@@ -373,6 +373,9 @@ async def put_settings(partial: dict, _: None = Depends(require_auth)) -> dict:
             hub.stop()
         triggers.restart(s, skip_gesture=sony)
         log.info("camera/trigger settings changed -> reinitialised")
+    # nudge live UIs (kiosk) to re-read settings NOW instead of on their 30s poll —
+    # overlay/stats/tune-mode toggles and text changes apply the moment admin saves
+    bus.publish({"type": "settings"})
     return _mask_secrets(s.model_dump())
 
 

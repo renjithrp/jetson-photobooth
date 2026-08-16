@@ -260,6 +260,8 @@ function onEvent(ev){
       if (gestureOverlay) drawGesture(ev);
       renderStats(ev);
       break;
+    // admin saved settings: apply overlay/stats toggles + texts right away
+    case "settings": loadInfo(); loadWifi(); break;
   }
 }
 function flash(){ const f=L("flash"); f.classList.add("on"); setTimeout(()=>f.classList.remove("on"),120); }
