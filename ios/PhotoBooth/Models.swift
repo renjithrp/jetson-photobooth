@@ -53,3 +53,13 @@ struct GallerySession: Decodable {
     let mtime: Double
     let images: [String]
 }
+
+/// GET /api/wifi/info — hotspot details + QR codes (data: URIs) for the guest
+/// self-download flow: join_qr joins the booth Wi-Fi, find_qr opens the photo finder.
+struct WifiInfo: Decodable {
+    var active: Bool? = nil
+    var ssid: String? = nil
+    var join_qr: String? = nil
+    var find_qr: String? = nil
+    var find_url: String? = nil
+}

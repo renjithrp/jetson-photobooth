@@ -82,6 +82,9 @@ final class BoothClient: ObservableObject {
         return (await post("/api/capture", body: [String: String]()) as R?)?.ok ?? false
     }
 
+    // MARK: - wifi info (QR self-download flow)
+    func wifiInfo() async -> WifiInfo? { await get("/api/wifi/info") }
+
     // MARK: - gallery
     /// All photos on the booth, newest session first (real files only — no deleted).
     func gallery() async -> [String] {

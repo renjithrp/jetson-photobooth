@@ -64,6 +64,7 @@ struct GalleryView: View {
             } message: { Text("We'll send your \(chosen.count) selected photo(s) via WhatsApp when the booth is online.") }
             .task { await load() }
         }
+        .idleReturn()   // abandoned gallery returns to the live view
     }
 
     private func cell(_ u: String) -> some View {

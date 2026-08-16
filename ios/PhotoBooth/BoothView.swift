@@ -1,11 +1,14 @@
 import SwiftUI
+import UIKit
 
 /// Full-screen, camera-app style booth screen: live preview edge to edge, a round
-/// shutter on the right, a ⋯ menu (Admin / Settings) top-right, and a gallery button
-/// bottom-left showing the most recent photo.
+/// shutter on the right, a ⋯ menu (Admin / Settings) top-right, a gallery button
+/// bottom-left, and a big "Get your photos" guest call-to-action bottom-center.
+/// The screen never auto-locks while the app is frontmost (kiosk).
 struct BoothView: View {
     @EnvironmentObject var booth: BoothClient
     @Environment(\.scenePhase) private var scenePhase
+    @State private var showGuest = false
     @State private var showGallery = false
     @State private var showAdmin = false
     @State private var showSettings = false
@@ -34,7 +37,7 @@ struct BoothView: View {
             }
             .padding()
 
-            // gallery button (bottom-left) + shutter (right, centered)
+            // gallery (bottom-left) + guest CTA (bottom-center) + shutter (right, centered)
             HStack {
                 VStack {
                     Spacer()
@@ -48,14 +51,30 @@ struct BoothView: View {
                 .padding(.trailing, 24)
             }
             .padding()
+
+            // big friendly guest call-to-action
+            VStack {
+                Spacer()
+                Button { showGuest = true } label: {
+                    Label("Get your photos", systemImage: "sparkles")
+                        .font(.title2.bold()).foregroundStyle(.white)
+                        .padding(.horizontal, 26).padding(.vertical, 14)
+                        .background(.blue.opacity(0.9)).clipShape(Capsule())
+                        .shadow(radius: 8)
+                }
+                .padding(.bottom, 26)
+            }
         }
         .statusBarHidden(true)
+        .fullScreenCover(isPresented: $showGuest, onDismiss: { liveReload += 1 }) { GuestView() }
         .sheet(isPresented: $showGallery, onDismiss: { liveReload += 1; Task { await loadThumb() } }) { GalleryView() }
         .sheet(isPresented: $showAdmin, onDismiss: { liveReload += 1 }) { AdminView() }
         .sheet(isPresented: $showSettings, onDismiss: { liveReload += 1 }) { SettingsSheet() }
         .onChange(of: scenePhase) { phase in
-            if phase == .active { liveReload += 1 }   // reconnect the stream on foreground
+            // reconnect the stream + keep the screen awake (kiosk) whenever we're frontmost
+            if phase == .active { liveReload += 1; UIApplication.shared.isIdleTimerDisabled = true }
         }
+        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }   // never auto-lock in the booth
         .task { await loadThumb() }
     }
 
