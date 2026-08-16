@@ -50,6 +50,13 @@ def _gdrive_conf(g: GDriveDestination) -> str:
     return _write_conf(ini)
 
 
+def _remote_name(f: Path) -> str:
+    """Shot filenames carry ms timestamps and are globally unique, so they can live
+    in ONE flat Drive folder. Generic names (collage.jpg) get a session prefix so
+    different sessions' collages can't overwrite each other."""
+    return f.name if f.name.startswith("shot_") else f"{f.parent.name}_{f.name}"
+
+
 def gdrive_upload(files: list[Path], g: GDriveDestination, subdir: str = "") -> dict:
     if not _have_rclone():
         return {"ok": False, "error": "rclone not installed"}
@@ -62,9 +69,10 @@ def gdrive_upload(files: list[Path], g: GDriveDestination, subdir: str = "") -> 
     links: list[str] = []
     try:
         for f in files:
-            _rclone(conf, ["copy", str(f), dest], check=True, timeout=120)
+            name = _remote_name(f)
+            _rclone(conf, ["copyto", str(f), f"{dest}/{name}"], check=True, timeout=120)
             if g.make_share_link:
-                r = _rclone(conf, ["link", f"{dest}/{f.name}"], check=False, timeout=60)
+                r = _rclone(conf, ["link", f"{dest}/{name}"], check=False, timeout=60)
                 if r.returncode == 0 and r.stdout.strip():
                     links.append(r.stdout.strip())
         return {"ok": True, "links": links, "dest": dest}
@@ -89,7 +97,9 @@ def gdrive_upload_folder_link(files: list[Path], g: GDriveDestination, subdir: s
     dest = f"{g.rclone_remote}:{g.folder}/{subdir.strip('/')}"
     try:
         for f in files:
-            _rclone(conf, ["copy", str(f), dest], check=True, timeout=120)
+            # same flat naming as gdrive_upload (guest folders can hold two sessions'
+            # collages too)
+            _rclone(conf, ["copyto", str(f), f"{dest}/{_remote_name(f)}"], check=True, timeout=120)
         r = _rclone(conf, ["link", dest], check=False, timeout=60)
         if r.returncode == 0 and r.stdout.strip():
             return {"ok": True, "link": r.stdout.strip().splitlines()[-1], "dest": dest}

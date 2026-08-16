@@ -48,10 +48,12 @@ class SyncWorker:
         tmp.replace(self.path)
 
     # ---- API --------------------------------------------------------------
-    def _append_job(self, session: str, files: list, dests: list[str]) -> None:
+    def _append_job(self, session: str, files: list, dests: list[str],
+                    subdir: str | None = None) -> None:
         self.jobs.append({
             "id": f"{session}.{'-'.join(dests)}.{int(time.time() * 1000)}",
             "session": session,
+            "subdir": session if subdir is None else subdir,   # remote folder ("" = root)
             "files": [str(f) for f in files],
             "dests": dests,
             "done": [],
@@ -77,21 +79,17 @@ class SyncWorker:
 
     def enqueue_drive(self, files: list, settings) -> None:
         """Queue specific already-captured files for Google Drive only (guest opt-in).
-        Grouped by session so remote paths stay organised. No-op if Drive isn't
+        Everything lands in ONE flat Drive folder — shot filenames are timestamp-unique
+        and generic names (collage.jpg) get a session prefix at upload time, so
+        session subfolders would only fragment the event album. No-op if Drive isn't
         enabled/configured — the opt-in is still recorded in the consent store, and
         uploads once Drive is turned on and the photo is re-opted-in."""
-        if not settings.storage.gdrive.enabled:
-            return
-        groups: dict[str, list] = {}
-        for f in files:
-            groups.setdefault(Path(f).parent.name, []).append(str(f))
-        if not groups:
+        if not settings.storage.gdrive.enabled or not files:
             return
         with self._lock:
             if not self._loaded:
                 self._load()
-            for session, fs in groups.items():
-                self._append_job(session, fs, ["gdrive"])
+            self._append_job("drive-optin", [str(f) for f in files], ["gdrive"], subdir="")
             self._save()
 
     def retry_now(self) -> None:
@@ -169,7 +167,7 @@ class SyncWorker:
                     j["done"].append(dest)
                     changed = True
                     continue
-                res = uploaders.dispatch(dest, files, s, subdir=j["session"])
+                res = uploaders.dispatch(dest, files, s, subdir=j.get("subdir", j["session"]))
                 if res.get("ok"):
                     j["done"].append(dest)
                     j["last_error"] = ""
