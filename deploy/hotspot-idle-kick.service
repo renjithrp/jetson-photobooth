@@ -1,0 +1,7 @@
+# One shot of the idle-guest deauth sweep; driven by hotspot-idle-kick.timer.
+[Unit]
+Description=Kick idle guests off the booth hotspot
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/hotspot-idle-kick.sh
