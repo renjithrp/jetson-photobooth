@@ -58,7 +58,10 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
   env → `CreateCameraObjectInfoEthernetConnection`), and it was tested live — the SDK
   returns `Api_NotSupportModelOfEthernet` for ILCE-7RM4A: the model is in the header
   enum but the runtime only allows network remote for newer bodies (7RM5/A7IV/A1/FX3…).
-  Its Wi-Fi PC Remote only talks to Sony's Imaging Edge. The fallback code stays in the
+  Its Wi-Fi PC Remote only talks to Sony's Imaging Edge. Even spoofing a
+  network-capable model id (7M4/7RM5) past the local check was probed live: object
+  creation succeeds but Connect() fails instantly (0x8000) — no protocol path exists.
+  The fallback code stays in the
   daemon (dormant, env unset) and works as-is if the camera is ever upgraded to a
   network-capable body; the camera's hotspot MAC e8:4f:25:fd:af:47 has a dnsmasq
   reservation at 192.168.50.29. Backup binary at external/crsdk/cameraDaemon.bak.
