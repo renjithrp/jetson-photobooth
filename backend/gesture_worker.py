@@ -103,10 +103,10 @@ class GestureWorker:
     # The accuracy gates (confirm_frames, match_ratio, hand_face_scale,
     # assoc_face_dist, max_hands) are SETTINGS (trigger block) so they can be
     # fine-tuned live from admin / the iPad while watching the overlay. Defaults
-    # were measured at the booth — e.g. an open palm's landmark span reads
-    # ~0.30-0.35 of the face bbox height, hallucinated hands ~0.10, so the
-    # face-scale default 0.15 sits between them (face bboxes inflate up close, so real palms read ~0.2 of the bbox at arm-in-front range).
-    ABS_MIN_FLOOR = 0.04   # the face-scaled size gate never drops below this
+    # measured at the booth (stats panel, 40min of frames): a real palm's
+    # landmark span reads 0.6-0.9 of the face bbox height; hallucinated
+    # background "hands" read <=0.43 of it — hand_face_scale 0.45 splits them.
+    ABS_MIN_FLOOR = 0.05   # the face-scaled size gate never drops below this
 
     def __init__(self) -> None:
         self.base = _detect_backend()
@@ -125,6 +125,7 @@ class GestureWorker:
         self._last_fire = 0.0
         self._last_dbg = 0.0
         self._published_clear = False   # sent one "no hand" state since the hand left
+        self._dry_fire = 0.0            # last tune-mode "would fire" (capture suppressed)
         # confirmation state: jitter-proofing for the static-gesture hold
         self._streak = 0                # consecutive matching detection frames
         self._hold_hits = 0             # matched frames since the hold started
@@ -312,7 +313,7 @@ class GestureWorker:
         in_frame = gestures.hand_fully_in_frame(lm)
         span = gestures.hand_span(lm)
         abs_min = float(getattr(t, "hand_min_size", 0.0))
-        scale = float(getattr(t, "hand_face_scale", 0.15))
+        scale = float(getattr(t, "hand_face_scale", 0.45))
         eff_min = max(self.ABS_MIN_FLOOR, scale * face_h) \
             if (face_h > 0 and scale > 0) else abs_min
         size_ok = span >= eff_min
@@ -325,7 +326,7 @@ class GestureWorker:
                    (cy - (bb.ymin + bb.height / 2)) ** 2) ** 0.5), bb.height)
                 for f in faces
                 for bb in (f.location_data.relative_bounding_box,))
-            assoc = float(getattr(t, "assoc_face_dist", 3.0))
+            assoc = float(getattr(t, "assoc_face_dist", 4.0))
             if assoc > 0:
                 near_face = d <= assoc * max(fh, 1e-6)
             on_face = gestures.hand_on_face(cx, cy, faces)
@@ -440,6 +441,8 @@ class GestureWorker:
                                     (self._hold_hits + self._hold_misses), 2)
                               if self._hold_start and (self._hold_hits + self._hold_misses)
                               else None,
+                "tune_mode": bool(getattr(self.trigger, "tune_mode", False)),
+                "would_fire": (now - self._dry_fire) < 2.5,
             }
         try:
             req = urllib.request.Request(
@@ -452,6 +455,13 @@ class GestureWorker:
             pass  # overlay is best-effort; never let it stall detection
 
     def _fire(self) -> None:
+        # Tune mode: everything up to the shutter behaves identically (hold,
+        # cooldown, overlay) but the capture request is suppressed, so the gates
+        # can be tuned live without wasting shots. The overlay shows WOULD FIRE.
+        if bool(getattr(self.trigger, "tune_mode", False)):
+            self._dry_fire = time.time()
+            _log("gesture matched -> WOULD FIRE (tune mode, capture suppressed)")
+            return
         try:
             r = _opener(self.base + "/api/capture", method="POST", timeout=8)
             body = r.read().decode()

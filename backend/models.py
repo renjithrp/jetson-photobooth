@@ -51,8 +51,8 @@ class TriggerSettings(BaseModel):
     max_hands: int = Field(1, ge=1, le=4)             # hands tracked at once (2+ = every hand is gated, best candidate wins)
     confirm_frames: int = Field(3, ge=1, le=10)       # consecutive matching frames before the hold starts (jitter filter)
     match_ratio: float = Field(0.7, ge=0.0, le=1.0)   # min matched share of frames across the hold window
-    hand_face_scale: float = Field(0.15, ge=0, le=1)  # min hand span as a fraction of face height (0 = off; falls back to hand_min_size)
-    assoc_face_dist: float = Field(3.0, ge=0, le=10)  # hand must be within this many face-heights of a face (0 = off)
+    hand_face_scale: float = Field(0.45, ge=0, le=1)  # min hand span as a fraction of face height (0 = off; falls back to hand_min_size)
+    assoc_face_dist: float = Field(4.0, ge=0, le=10)  # hand must be within this many face-heights of a face (0 = off; 4 covers a fully extended arm)
     cooldown_seconds: float = Field(5.0, ge=0)       # ignore triggers right after a session
     # Face gating — require a face inside a target zone before a gesture counts.
     # Stops the booth firing when no one is actually standing in front of it.
@@ -72,6 +72,9 @@ class TriggerSettings(BaseModel):
     # Live numbers panel (span/min/face/streak/ratio…) on the kiosk & iPad preview,
     # for fine-tuning the gates above while watching real values. Debug only.
     show_gesture_stats: bool = False
+    # Tune mode: the full detection pipeline runs (overlay shows "WOULD FIRE")
+    # but the camera is never triggered — safe live tuning. Turn off when done.
+    tune_mode: bool = False
 
 
 class TimerSettings(BaseModel):

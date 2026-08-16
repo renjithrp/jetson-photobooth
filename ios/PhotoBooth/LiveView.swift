@@ -72,8 +72,9 @@ struct LiveView: UIViewRepresentable {
               sd.style.display = 'block';
               const pct = v => v == null ? '-' : Math.round(v*100) + '%';
               const yn = v => v === true ? 'Y' : v === false ? 'N' : '-';
-              sd.textContent = !ev.hand ? 'no hand' :
-                'want ' + ev.want + '  hands ' + (ev.hands ?? 1) + '  score ' + (ev.score ?? '-') + '\\n' +
+              sd.textContent = !ev.hand ? ('no hand' + (ev.tune_mode ? '  [TUNE MODE]' : '')) :
+                'want ' + ev.want + '  hands ' + (ev.hands ?? 1) + '  score ' + (ev.score ?? '-') +
+                (ev.tune_mode ? '  [TUNE MODE]' : '') + '\\n' +
                 'span ' + pct(ev.span) + '  min ' + pct(ev.min_size) + '  face_h ' + (ev.face_h ? pct(ev.face_h) : '-') + '\\n' +
                 'pose ' + yn(ev.match) + '  size ' + yn(ev.size_ok) + '  in_frame ' + yn(ev.in_frame) +
                 '  near_face ' + yn(ev.near_face) + '  on_face ' + (ev.on_face ? 'YES' : 'no') + '\\n' +
@@ -101,7 +102,8 @@ struct LiveView: UIViewRepresentable {
                 gx.beginPath(); gx.moveTo(x1,y1); gx.lineTo(x2,y2); gx.stroke(); }
               for (const p of ev.lm){ const [x,y]=P(p); gx.beginPath(); gx.arc(x,y,4,0,7); gx.fill(); }
               const [wx,wy] = P(ev.lm[0]);
-              const reason = ev.on_face ? 'rejected: looks like a face'
+              const reason = (ev.tune_mode && ev.would_fire) ? 'WOULD FIRE \\u2713 (tune mode)'
+                : ev.on_face ? 'rejected: looks like a face'
                 : tooSmall ? ('too small/far (' + Math.round(ev.span*100) + '% < ' + Math.round(ev.min_size*100) + '%) \\u2014 pose ignored')
                 : ev.near_face === false ? 'no face near the hand'
                 : !ev.in_frame ? 'hand not fully in frame'

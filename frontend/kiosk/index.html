@@ -283,8 +283,8 @@ function renderStats(ev){
   el.style.display = "block";
   const pct = v => v == null ? "–" : Math.round(v*100) + "%";
   const yn = v => v === true ? "✓" : v === false ? "✗" : "–";
-  el.textContent = !ev.hand ? "no hand" :
-`want ${ev.want}   hands ${ev.hands ?? 1}   score ${ev.score ?? "–"}
+  el.textContent = !ev.hand ? ("no hand" + (ev.tune_mode ? "   [TUNE MODE]" : "")) :
+`want ${ev.want}   hands ${ev.hands ?? 1}   score ${ev.score ?? "–"}${ev.tune_mode ? "   [TUNE MODE]" : ""}
 span ${pct(ev.span)}   min ${pct(ev.min_size)}   face_h ${ev.face_h ? pct(ev.face_h) : "–"}
 pose ${yn(ev.match)}   size ${yn(ev.size_ok)}   in_frame ${yn(ev.in_frame)}
 near_face ${yn(ev.near_face)}   on_face ${ev.on_face ? "YES" : "no"}
@@ -332,7 +332,8 @@ function drawGesture(ev){
   }
   // status chip above the wrist + hold-progress ring
   const [wx,wy] = P(ev.lm[0]);
-  const reason = ev.on_face ? "rejected: looks like a face"
+  const reason = (ev.tune_mode && ev.would_fire) ? "WOULD FIRE ✓ (tune mode)"
+    : ev.on_face ? "rejected: looks like a face"
     : tooSmall ? `too small/far (${Math.round(ev.span*100)}% < ${Math.round(ev.min_size*100)}%) — pose ignored`
     : ev.near_face === false ? "no face near the hand"
     : !ev.in_frame ? "hand not fully in frame"

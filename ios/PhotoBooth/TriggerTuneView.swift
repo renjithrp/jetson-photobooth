@@ -49,6 +49,7 @@ struct TriggerTuneView: View {
                 }
                 Toggle("Show detection overlay on video", isOn: $cfg.show_gesture_overlay)
                 Toggle("Show live detection numbers", isOn: $cfg.show_gesture_stats)
+                Toggle("Tune mode (don't trigger the camera)", isOn: $cfg.tune_mode)
                 if let s = saveState { Text(s).font(.footnote).foregroundStyle(.secondary) }
             } footer: {
                 Text("Watch the overlay while tuning: green skeleton = pose matches, amber = seen but rejected (the label says why).")
@@ -84,6 +85,7 @@ struct TriggerTuneView: View {
         .onChange(of: cfg.require_face) { _ in apply() }
         .onChange(of: cfg.show_gesture_overlay) { _ in apply() }
         .onChange(of: cfg.show_gesture_stats) { _ in apply() }
+        .onChange(of: cfg.tune_mode) { _ in apply() }
         .onChange(of: cfg.max_hands) { _ in apply() }
         .onChange(of: cfg.confirm_frames) { _ in apply() }
         .onChange(of: cfg.match_ratio) { _ in apply() }
