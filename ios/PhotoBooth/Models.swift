@@ -6,7 +6,7 @@ import Foundation
 struct SystemInfo: Decodable {
     let busy: Bool
     let daemon_connected: Bool?
-    struct Stream: Decodable { let streaming: Bool?; let fps: Double? }
+    struct Stream: Decodable { let streaming: Bool?; let recovering: Bool?; let fps: Double? }
     let camera_stream: Stream?
     let booth: String?          // not sent by backend; kept optional for future use
 }

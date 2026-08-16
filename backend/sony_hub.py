@@ -77,13 +77,24 @@ class SonyFrameHub:
             return self.latest
 
     # ---- health ----------------------------------------------------------
+    # Camera drops (bad USB cable/port) self-heal in ~7s: systemd restarts the
+    # daemon and it reconnects. Below this many seconds without frames we're inside
+    # that self-heal window, so the UI should NOT flag the camera offline — only a
+    # gap longer than this is a real outage worth showing a badge for.
+    RECOVER_GRACE_S = 12.0
+
     def health(self) -> dict:
         now = time.time()
         age = (now - self.last_frame) if self.last_frame else None
         streaming = age is not None and age < 3.0
+        # "recovering": we WERE streaming and the gap is still within the self-heal
+        # window — a transient blip, not an outage. A gap beyond the grace (or never
+        # having streamed at all) is a real outage the badge should show.
+        recovering = (not streaming) and (age is not None) and (age < self.RECOVER_GRACE_S)
         return {
             "connected": self.connected,
             "streaming": streaming,
+            "recovering": recovering,
             "fps": round(self.fps, 1) if streaming else 0.0,
             "age_s": round(age, 1) if age is not None else None,
         }

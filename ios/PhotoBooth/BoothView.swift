@@ -89,13 +89,20 @@ struct BoothView: View {
     }
 
     private var statusPill: some View {
-        let ok = booth.status != nil
-        let streaming = booth.status?.camera_stream?.streaming ?? false
-        let text = booth.status == nil ? "No booth" : (streaming ? "Live" : "Camera offline")
-        return Label(text, systemImage: ok && streaming ? "dot.radiowaves.left.and.right" : "exclamationmark.triangle")
+        let cs = booth.status?.camera_stream
+        let streaming = cs?.streaming ?? false
+        let recovering = cs?.recovering ?? false
+        // A brief self-healing USB drop shows a neutral "Reconnecting…", not a red
+        // "Camera offline" — only a sustained outage goes red.
+        let state: (String, String, Color) =
+            booth.status == nil ? ("No booth", "exclamationmark.triangle", .red)
+            : streaming        ? ("Live", "dot.radiowaves.left.and.right", .green)
+            : recovering       ? ("Reconnecting…", "arrow.triangle.2.circlepath", .orange)
+            :                    ("Camera offline", "video.slash", .red)
+        return Label(state.0, systemImage: state.1)
             .font(.caption.bold()).foregroundStyle(.white)
             .padding(.horizontal, 12).padding(.vertical, 8)
-            .background((ok && streaming ? Color.green : Color.red).opacity(0.85))
+            .background(state.2.opacity(0.85))
             .clipShape(Capsule())
             .onTapGesture { if booth.status == nil { showSettings = true } }
     }

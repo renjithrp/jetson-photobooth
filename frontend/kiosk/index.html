@@ -179,11 +179,11 @@ async function loadInfo(){
   try{
     const r = await fetch("/api/system/info"); const j = await r.json();
     L("ipbadge").textContent = "admin: " + j.admin_url;
-    // show "camera reconnecting" whenever live view isn't actually streaming
-    // (camera_stream.streaming is more accurate than daemon_connected, which can be
-    // true while the daemon is up but producing no frames — the watchdog auto-heals it)
+    // Show the badge only on a REAL outage — not during the ~7s self-heal after a
+    // brief USB drop (cs.recovering). A short blip stays silent; a sustained gap
+    // (gap > grace, or the camera genuinely gone) shows "camera reconnecting".
     const cs = j.camera_stream;
-    const unhealthy = cs ? !cs.streaming : (j.daemon_connected === false);
+    const unhealthy = cs ? (!cs.streaming && !cs.recovering) : (j.daemon_connected === false);
     L("cambadge").style.display = unhealthy ? "block" : "none";
     const s = await (await fetch("/api/settings")).json();
     attractAfter = s.timer.attract_after_seconds || 60;
