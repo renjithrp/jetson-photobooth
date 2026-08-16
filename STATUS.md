@@ -63,7 +63,13 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
   network-capable body; the camera's hotspot MAC e8:4f:25:fd:af:47 has a dnsmasq
   reservation at 192.168.50.29. Backup binary at external/crsdk/cameraDaemon.bak.
   Practical USB backup instead: a spare USB cable + the second USB port (the
-  camera-usb-kick service already self-heals the stale-session case).
+  camera-usb-kick service already self-heals the stale-session case). After the test the
+  camera was returned to PC Remote > USB and normal operation verified (reconnect + live
+  view at ~15 fps). To (re)test the fallback with a future network-capable body: camera in
+  PC Remote > Wi-Fi on the PhotoBooth hotspot → drop-in
+  `photobooth-camera.service.d/wifi-fallback.conf` with `BOOTH_CAMERA_IP/_MAC` →
+  `daemon-reload` + restart with USB unplugged → journal shows "trying Wi-Fi fallback"
+  then "Connected"; finish with a test capture, then remove the drop-in / replug USB.
 
 ## iPad app (kiosk tablet)
 Native SwiftUI kiosk app in `ios/` — **iPad-only** (TARGETED_DEVICE_FAMILY=2). Source +
