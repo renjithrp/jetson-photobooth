@@ -64,6 +64,18 @@
 <body>
   <h1><svg class="ic" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
       Find your photos</h1>
+
+  <!-- Ready-to-download banner: shows when the booth tablet just prepared a
+       download (guest picked photos there, then scanned the join-Wi-Fi QR). -->
+  <div id="pendingBox" style="display:none; background:#0d9488; border-radius:16px;
+       padding:18px; margin:0 0 14px; text-align:center">
+    <div id="pendingTitle" style="font-weight:700; font-size:1.15rem; margin-bottom:10px"></div>
+    <a class="btn" id="pendingDl" href="#" style="background:#fff; color:#0d9488">
+      Download my photos</a>
+    <div style="margin-top:8px"><a href="#" id="pendingNo"
+      style="color:#ffffffcc; font-size:.85rem">Not my photos — take a selfie instead</a></div>
+  </div>
+
   <p class="sub">Take a quick selfie and we'll find every photo you're in.</p>
 
   <button class="btn" id="findBtn">
@@ -131,7 +143,27 @@ const thumb = u => u.replace(/^\/captures\//, "/thumbs/");
     }
   } catch (e) {}
   try { OPTS = await (await fetch("/api/share/options")).json(); } catch (e) {}
+  loadPending();
 })();
+
+/* Ready-to-download banner: the booth tablet announces a guest's selection just
+   before showing the join-Wi-Fi QR; if we were opened by the captive popup right
+   after joining, offer that download directly (retry once — the popup can open
+   fast). */
+async function loadPending(retried) {
+  try {
+    const p = await (await fetch("/api/download/pending")).json();
+    if (p.pending && p.download) {
+      L("pendingTitle").textContent =
+        `Your ${p.count} photo${p.count > 1 ? "s" : ""} are ready`;
+      L("pendingDl").href = p.download;
+      L("pendingBox").style.display = "block";
+      return;
+    }
+  } catch (e) {}
+  if (!retried) setTimeout(() => loadPending(true), 3000);
+}
+L("pendingNo").onclick = (e) => { e.preventDefault(); L("pendingBox").style.display = "none"; };
 
 L("findBtn").onclick = () => L("selfie").click();
 

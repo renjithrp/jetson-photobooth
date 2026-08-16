@@ -177,6 +177,14 @@ final class BoothClient: ObservableObject {
             ?? OptinResult(ok: false, error: "network error")
     }
 
+    /// Announce a guest's selected photos as a "pending download": after they join
+    /// the hotspot via the Wi-Fi QR, the captive popup opens /booth showing a
+    /// direct download button — no second QR scan needed.
+    func announceDownload(photos: [String]) async {
+        struct R: Decodable { let ok: Bool }
+        _ = await post("/api/download/announce", body: PhotosReq(photos: photos)) as R?
+    }
+
     // MARK: - admin
     func login(pin: String) async -> Bool {
         struct R: Decodable { let ok: Bool }

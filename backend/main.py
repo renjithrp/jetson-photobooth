@@ -514,6 +514,39 @@ async def thumb(rest: str) -> FileResponse:
     return FileResponse(p, headers={"Cache-Control": "public, max-age=86400"})
 
 
+# "Pending download": the iPad app announces a guest's selected photos right before
+# showing the join-Wi-Fi QR; the guest page (auto-opened by the captive popup after
+# joining) then shows a direct download button — no second QR scan needed. Ephemeral
+# and single-slot by design: one guest uses the booth tablet at a time.
+_pending_dl: dict = {}
+_PENDING_TTL_S = 600
+
+
+@app.post("/api/download/announce")
+async def download_announce(body: dict) -> dict:
+    """Called by the booth tablet (direct :8000 — NOT exposed through the captive
+    portal, so hotspot guests can't plant downloads on each other's popups)."""
+    urls = [u for u in (body.get("photos") or []) if share.resolve_capture(str(u))]
+    if not urls:
+        return {"ok": False, "error": "no photos"}
+    _pending_dl.clear()
+    _pending_dl.update({"photos": urls, "ts": time.time()})
+    return {"ok": True, "count": len(urls)}
+
+
+@app.get("/api/download/pending")
+async def download_pending() -> dict:
+    """Guest-reachable: what the /booth page shows as a ready-to-download banner."""
+    if not _pending_dl or time.time() - _pending_dl.get("ts", 0) > _PENDING_TTL_S:
+        return {"pending": False}
+    photos = [u for u in _pending_dl["photos"] if share.resolve_capture(u)]
+    if not photos:
+        return {"pending": False}
+    qs = "&".join("p=" + urllib.parse.quote(u) for u in photos)
+    return {"pending": True, "count": len(photos), "photos": photos[:4],
+            "download": "/api/download?" + qs}
+
+
 @app.get("/api/download")
 async def download_zip(p: list[str] = Query([])) -> FileResponse:
     """Single-click download of the selected photos as one ZIP."""

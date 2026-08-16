@@ -13,7 +13,8 @@ GUEST_ROUTES = [
     "/api/wifi/info", "/api/faces/find", "/api/faces/status",
     "/api/share/options", "/api/share/email", "/api/share/links",
     "/api/share/whatsapp", "/api/share/drive",
-    "/api/download", "/captures/session_x/1.jpg", "/thumbs/session_x/1.jpg",
+    "/api/download", "/api/download/pending",
+    "/captures/session_x/1.jpg", "/thumbs/session_x/1.jpg",
     "/s/session_x",
 ]
 BLOCKED_ROUTES = [
@@ -21,6 +22,7 @@ BLOCKED_ROUTES = [
     "/api/system/service", "/api/system/info", "/api/hotspot", "/api/wifi/scan",
     "/api/wifi/connect", "/api/test/s3", "/api/faces/groups", "/api/print",
     "/api/consent/whatsapp/pending", "/api/consent/whatsapp/sent",  # admin-only
+    "/api/download/announce",   # booth-tablet only — guests must not plant downloads
     "/api/faces/find/../../login",   # traversal-style probe must not match
 ]
 

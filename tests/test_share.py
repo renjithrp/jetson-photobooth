@@ -67,6 +67,21 @@ def test_download_zip_handles_pre1980_mtime(client):
     assert len(zf.namelist()) == 1
 
 
+def test_pending_download_announce_flow(client):
+    # iPad announces a guest's selection -> the captive-popup page offers it directly
+    urls = _make_session("session_pend", 2)
+    assert client.get("/api/download/pending").json()["pending"] is False
+    r = client.post("/api/download/announce", json={"photos": urls}).json()
+    assert r["ok"] and r["count"] == 2
+    p = client.get("/api/download/pending").json()
+    assert p["pending"] and p["count"] == 2 and p["download"].startswith("/api/download?")
+    # invalid paths are rejected; expiry hides stale announcements
+    assert client.post("/api/download/announce", json={"photos": ["/etc/passwd"]}).json()["ok"] is False
+    from backend import main as m
+    m._pending_dl["ts"] -= 10_000
+    assert client.get("/api/download/pending").json()["pending"] is False
+
+
 def test_whatsapp_optin_collect_and_admin_flow(admin):
     admin.put("/api/settings", json={"share": {"whatsapp_optin": True}})
     urls = _make_session("session_wa", 2)

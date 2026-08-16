@@ -247,7 +247,9 @@ struct QRStepsView: View {
                 if page == 0 {
                     qrImageView(Self.decode(info.join_qr),
                                 missing: "The booth Wi-Fi is off — ask the staff, or connect to \(info.ssid ?? "the booth network") manually.")
-                    instruction("Open your phone's camera, point it at the code, and tap “Join Network”.")
+                    instruction(downloadPhotos.isEmpty
+                        ? "Open your phone's camera, point it at the code, and tap “Join Network”."
+                        : "Open your phone's camera, scan, and tap “Join Network” — your download page pops up by itself. If it doesn't, tap Next for a direct code.")
                 } else if let direct = directURL {
                     qrImageView(Self.qrCode(from: direct),
                                 missing: "Couldn't create the download code — ask the staff.")
@@ -279,7 +281,13 @@ struct QRStepsView: View {
             }
         }
         .padding(36)
-        .task { info = await booth.wifiInfo() }
+        .task {
+            info = await booth.wifiInfo()
+            if !downloadPhotos.isEmpty {
+                // arm the captive-popup download banner for the phone about to join
+                await booth.announceDownload(photos: downloadPhotos)
+            }
+        }
     }
 
     private func qrImageView(_ img: UIImage?, missing: String) -> some View {
