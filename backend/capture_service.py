@@ -11,7 +11,7 @@ from typing import Callable
 import qrcode
 
 from . import config, processing, uploaders
-from .camera import CaptureError, daemon_capture, make_camera
+from .camera import CaptureError, daemon_capture, daemon_prefocus, make_camera
 from .events import bus
 
 # Hold captures until the system clock is sane. After a cold boot the Jetson's
@@ -93,6 +93,11 @@ class CaptureService:
             # countdown
             for n in range(s.timer.countdown_seconds, 0, -1):
                 bus.publish({"type": "countdown", "value": n, "source": source})
+                if n == 1 and s.camera.backend == "sony" and s.preview.source == "sony_http":
+                    # Pre-focus during the last second: the daemon locks + holds focus
+                    # so the shutter fires right on the flash cue (no ~1s AF lag).
+                    # Fire-and-forget — a failure just means capture does its own AF.
+                    loop.run_in_executor(None, lambda: daemon_prefocus(s))
                 await asyncio.sleep(1)
 
             # capture (blocking -> executor)

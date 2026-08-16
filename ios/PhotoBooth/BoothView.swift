@@ -15,11 +15,23 @@ struct BoothView: View {
     @State private var triggering = false
     @State private var recentThumb: String?
     @State private var liveReload = 0        // bump to force the MJPEG stream to reconnect
+    @State private var focusing = false      // tap-to-focus reticle is showing
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             LiveView(url: booth.url("/api/preview/stream"), reloadID: liveReload).ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { Task { await focusTap() } }   // tap anywhere = autofocus
+
+            // camera-app style focus reticle while the lens locks
+            if focusing {
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(.yellow, lineWidth: 3)
+                    .frame(width: 96, height: 96)
+                    .shadow(radius: 4)
+                    .transition(.opacity)
+            }
 
             // top bar: status (left) + ⋯ menu (right)
             VStack {
@@ -132,6 +144,12 @@ struct BoothView: View {
         triggering = false
     }
     private func reconnect() async { await booth.connectAndRefresh() }
+    private func focusTap() async {
+        guard !focusing else { return }
+        withAnimation(.easeIn(duration: 0.1)) { focusing = true }
+        _ = await booth.focus()
+        withAnimation(.easeOut(duration: 0.3)) { focusing = false }
+    }
     private func loadThumb() async { recentThumb = await booth.gallery().first }
 }
 

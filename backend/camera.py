@@ -150,6 +150,21 @@ class SonyCamera(CameraBackend):
         return out
 
 
+def daemon_prefocus(settings: Settings) -> None:
+    """Best-effort pre-focus via the daemon's /prefocus: locks S1, waits for focus,
+    and HOLDS it so the capture a moment later skips its AF wait — the shutter fires
+    right on the kiosk's flash cue instead of ~1s after it. Fired during the last
+    countdown second; any failure is ignored (capture falls back to its own AF)."""
+    import urllib.request
+
+    base = (settings.preview.sony_http_url or "http://127.0.0.1:8080/").rstrip("/")
+    try:
+        with urllib.request.urlopen(base + "/prefocus", timeout=4) as r:
+            r.read()
+    except Exception:
+        pass
+
+
 def daemon_capture(settings: Settings, dest_dir: Path, count: int,
                    on_shot: Callable[[int], None] | None = None) -> list[Path]:
     """Capture via the unified camera daemon's /capture endpoint (one camera session

@@ -137,6 +137,13 @@ final class BoothClient: ObservableObject {
         return (await post("/api/capture", body: [String: String]()) as R?)?.ok ?? false
     }
 
+    // MARK: - focus
+    /// Trigger camera autofocus (same as the web control page's Focus button).
+    func focus() async -> Bool {
+        struct R: Decodable { var ok: Bool? = nil }
+        return (await post("/api/focus", body: [String: String]()) as R?)?.ok ?? false
+    }
+
     // MARK: - wifi info (QR self-download flow)
     func wifiInfo() async -> WifiInfo? { await get("/api/wifi/info") }
 

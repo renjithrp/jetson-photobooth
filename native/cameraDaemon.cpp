@@ -82,6 +82,18 @@ void setLvPromise(std::promise<void>* dp)
 std::mutex g_sdk;                       // serialize SDK access (live view vs capture)
 std::atomic<bool> g_capturing(false);   // pause live view while a shot is taken
 
+// Pre-focus hold: /prefocus locks S1, waits for focus, and KEEPS S1 locked so the
+// capture that follows (the countdown's end) skips its AF wait — the shutter fires
+// right on the kiosk's "smile" cue instead of ~1s after it. If no capture consumes
+// the hold, the keep-alive loop auto-releases it (abandoned countdown).
+std::atomic<bool> g_prefocusHeld(false);
+std::atomic<long long> g_prefocusExpiresMs(0);
+static long long _nowMs()
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 std::mutex m_focusPromiseMutex;
 std::promise<void>* m_focusPromise = nullptr;
 void setFocusPromise(std::promise<void>* dp)
@@ -282,6 +294,20 @@ void keep_alive_loop()
     int waited = 0;
     while(!g_stop) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        // Auto-release an unconsumed pre-focus hold (countdown was abandoned) so S1
+        // isn't left half-pressed forever.
+        if(g_prefocusHeld && _nowMs() > g_prefocusExpiresMs) {
+            std::lock_guard<std::mutex> sdklock(g_sdk);
+            if(g_prefocusHeld.exchange(false)) {
+                SCRSDK::CrDeviceProperty dp;
+                if(_getDeviceProperty(m_device_handle, SCRSDK::CrDeviceProperty_S1, &dp) == 0) {
+                    dp.SetCurrentValue(SCRSDK::CrLockIndicator_Unlocked);
+                    SCRSDK::SetDeviceProperty(m_device_handle, &dp);
+                }
+                g_capturing = false;
+                printf("[daemon] pre-focus hold expired, S1 released\n");
+            }
+        }
         if(g_keepaliveMs <= 0) continue;
         waited += 200;
         if(waited < g_keepaliveMs) continue;
@@ -537,7 +563,10 @@ bool doCapture(std::string& outFile)
     SCRSDK::CrDeviceProperty devProp;
 
     // --- autofocus: lock S1, wait for focus indication ---
-    {
+    // Skipped when /prefocus already locked S1 and confirmed focus during the
+    // countdown: the shutter then fires immediately, on the kiosk's cue.
+    bool preHeld = g_prefocusHeld.exchange(false);
+    if(!preHeld) {
         std::promise<void> fp;
         std::future<void> ff = fp.get_future();
         setFocusPromise(&fp);
@@ -547,6 +576,8 @@ bool doCapture(std::string& outFile)
         }
         ff.wait_for(std::chrono::milliseconds(3000));   // best-effort focus
         setFocusPromise(nullptr);
+    } else {
+        printf("[daemon] capture using pre-focus hold (AF wait skipped)\n");
     }
 
     // --- shutter: S2 down/up, wait for download to host ---
@@ -602,6 +633,33 @@ bool doFocus()
     return focused;
 }
 
+// Pre-focus for the capture countdown: lock S1, wait for focus, and KEEP S1 locked
+// so the capture that follows within a few seconds skips its AF wait — the shutter
+// fires right on the kiosk's "smile" cue instead of ~1s after it. g_capturing stays
+// true while the hold is armed (keeps the keep-alive pulser off S1). The hold is
+// consumed by doCapture, or auto-released by the keep-alive loop after 5s.
+bool doPrefocus()
+{
+    std::lock_guard<std::mutex> sdklock(g_sdk);
+    g_prefocusHeld = false;             // re-arm cleanly if called twice
+    g_capturing = true;
+    bool focused = false;
+    SCRSDK::CrDeviceProperty devProp;
+    std::promise<void> fp;
+    std::future<void> ff = fp.get_future();
+    setFocusPromise(&fp);
+    if(_getDeviceProperty(m_device_handle, SCRSDK::CrDeviceProperty_S1, &devProp) == 0) {
+        devProp.SetCurrentValue(SCRSDK::CrLockIndicator_Locked);
+        SCRSDK::SetDeviceProperty(m_device_handle, &devProp);
+    }
+    if(ff.wait_for(std::chrono::milliseconds(2000)) == std::future_status::ready) focused = true;
+    setFocusPromise(nullptr);
+    g_prefocusExpiresMs = _nowMs() + 5000;
+    g_prefocusHeld = true;              // S1 stays locked for the imminent capture
+    printf("[daemon] pre-focus %s, holding S1 for capture\n", focused ? "locked" : "timed out");
+    return focused;
+}
+
 void handle_request(const httplib::Request& req, httplib::Response& res)
 {
     res.set_chunked_content_provider(
@@ -621,6 +679,10 @@ void server_thread(httplib::Server& svr)
     });
     svr.Get("/focus", [](const httplib::Request&, httplib::Response& res) {
         bool ok = doFocus();
+        res.set_content(std::string("{\"ok\":") + (ok ? "true" : "false") + "}", "application/json");
+    });
+    svr.Get("/prefocus", [](const httplib::Request&, httplib::Response& res) {
+        bool ok = doPrefocus();
         res.set_content(std::string("{\"ok\":") + (ok ? "true" : "false") + "}", "application/json");
     });
     svr.Get("/status", [](const httplib::Request&, httplib::Response& res) {

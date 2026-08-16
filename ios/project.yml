@@ -6,7 +6,7 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    DEVELOPMENT_TEAM: 67F74CD3WB
+    DEVELOPMENT_TEAM: J6QU4CTJD7
     CODE_SIGN_STYLE: Automatic
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"

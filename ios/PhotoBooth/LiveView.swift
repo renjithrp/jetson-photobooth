@@ -19,6 +19,9 @@ struct LiveView: UIViewRepresentable {
         web.backgroundColor = .black
         web.scrollView.isScrollEnabled = false
         web.scrollView.backgroundColor = .black
+        // The stream is display-only; let touches fall through to SwiftUI so the
+        // booth screen's tap-to-focus gesture works (WKWebView eats them otherwise).
+        web.isUserInteractionEnabled = false
         context.coordinator.load(web, url: url, id: reloadID)
         return web
     }
