@@ -38,7 +38,10 @@ struct IdleReturn: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in idle.touch() })
+            // A zero-distance drag gesture can steal taps from toolbar/nav buttons, so
+            // detect activity with a plain tap plus a real-threshold drag (scrolling).
+            .simultaneousGesture(TapGesture().onEnded { idle.touch() })
+            .simultaneousGesture(DragGesture(minimumDistance: 12).onChanged { _ in idle.touch() })
             .overlay {
                 if idle.counting {
                     VStack(spacing: 18) {

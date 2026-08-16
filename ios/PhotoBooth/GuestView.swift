@@ -226,10 +226,11 @@ struct QRStepsView: View {
                 }
 
                 HStack(spacing: 16) {
-                    if page == 1 {
-                        Button { page = 0 } label: { Label("Back", systemImage: "chevron.left").font(.title3.bold()).padding(6) }
-                            .buttonStyle(.bordered).controlSize(.large)
-                    }
+                    // Back always available: page 1 -> page 0; page 0 -> photos/choice
+                    Button {
+                        if page == 1 { page = 0 } else { onDone() }
+                    } label: { Label("Back", systemImage: "chevron.left").font(.title3.bold()).padding(6) }
+                        .buttonStyle(.bordered).controlSize(.large)
                     if page == 0 {
                         Button { page = 1 } label: {
                             Label("I'm connected — next", systemImage: "chevron.right").font(.title3.bold()).padding(6)
