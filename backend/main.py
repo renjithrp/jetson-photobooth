@@ -150,9 +150,10 @@ async def control() -> FileResponse:
 
 
 @app.get("/booth", response_class=HTMLResponse)
-async def booth() -> FileResponse:
-    """Public guest page: find-your-photos by selfie + download (offline/hotspot mode)."""
-    return FileResponse(FRONTEND / "guest" / "index.html", headers=_NO_CACHE)
+async def booth() -> HTMLResponse:
+    """Public guest page: find-your-photos by selfie + download (offline/hotspot mode).
+    Renders the ready-to-download banner server-side when a download is pending."""
+    return HTMLResponse(render_guest_page(_pending_view()), headers=_NO_CACHE)
 
 
 @app.get("/api/wifi/info")
@@ -534,9 +535,7 @@ async def download_announce(body: dict) -> dict:
     return {"ok": True, "count": len(urls)}
 
 
-@app.get("/api/download/pending")
-async def download_pending() -> dict:
-    """Guest-reachable: what the /booth page shows as a ready-to-download banner."""
+def _pending_view() -> dict:
     if not _pending_dl or time.time() - _pending_dl.get("ts", 0) > _PENDING_TTL_S:
         return {"pending": False}
     photos = [u for u in _pending_dl["photos"] if share.resolve_capture(u)]
@@ -545,6 +544,28 @@ async def download_pending() -> dict:
     qs = "&".join("p=" + urllib.parse.quote(u) for u in photos)
     return {"pending": True, "count": len(photos), "photos": photos[:4],
             "download": "/api/download?" + qs}
+
+
+def render_guest_page(pend: dict) -> str:
+    """Substitute the __PENDING_*__ tokens in the guest page. Server-side so the
+    ready-to-download banner works even in captive mini-browsers that never run
+    JavaScript (the reason the popup showed no banner in live testing)."""
+    import html as html_lib
+    text = (FRONTEND / "guest" / "index.html").read_text()
+    if pend.get("pending"):
+        title = f"Your {pend['count']} photo{'s' if pend['count'] > 1 else ''} are ready"
+        return (text.replace("__PENDING_DISPLAY__", "block")
+                    .replace("__PENDING_TITLE__", title)
+                    .replace("__PENDING_URL__", html_lib.escape(pend["download"], quote=True)))
+    return (text.replace("__PENDING_DISPLAY__", "none")
+                .replace("__PENDING_TITLE__", "")
+                .replace("__PENDING_URL__", "#"))
+
+
+@app.get("/api/download/pending")
+async def download_pending() -> dict:
+    """Guest-reachable: what the /booth page shows as a ready-to-download banner."""
+    return _pending_view()
 
 
 @app.get("/api/download")

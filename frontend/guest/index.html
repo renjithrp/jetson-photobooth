@@ -66,11 +66,13 @@
       Find your photos</h1>
 
   <!-- Ready-to-download banner: shows when the booth tablet just prepared a
-       download (guest picked photos there, then scanned the join-Wi-Fi QR). -->
-  <div id="pendingBox" style="display:none; background:#0d9488; border-radius:16px;
+       download (guest picked photos there, then scanned the join-Wi-Fi QR).
+       The PENDING placeholder tokens below are substituted SERVER-SIDE so the
+       banner works even in captive mini-browsers that never run JavaScript. -->
+  <div id="pendingBox" style="display:__PENDING_DISPLAY__; background:#0d9488; border-radius:16px;
        padding:18px; margin:0 0 14px; text-align:center">
-    <div id="pendingTitle" style="font-weight:700; font-size:1.15rem; margin-bottom:10px"></div>
-    <a class="btn" id="pendingDl" href="#" style="background:#fff; color:#0d9488">
+    <div id="pendingTitle" style="font-weight:700; font-size:1.15rem; margin-bottom:10px">__PENDING_TITLE__</div>
+    <a class="btn" id="pendingDl" href="__PENDING_URL__" style="background:#fff; color:#0d9488">
       Download my photos</a>
     <div style="margin-top:8px"><a href="#" id="pendingNo"
       style="color:#ffffffcc; font-size:.85rem">Not my photos — take a selfie instead</a></div>

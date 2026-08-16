@@ -82,6 +82,20 @@ def test_pending_download_announce_flow(client):
     assert client.get("/api/download/pending").json()["pending"] is False
 
 
+def test_booth_page_renders_pending_banner_serverside(client):
+    # Captive mini-browsers don't reliably run JS, so the banner must be in the HTML.
+    from backend import main as m
+    m._pending_dl.clear()
+    html = client.get("/booth").text
+    assert "__PENDING_" not in html and "display:none" in html
+    urls = _make_session("session_banner", 3)
+    client.post("/api/download/announce", json={"photos": urls})
+    html = client.get("/booth").text
+    assert "display:block" in html and "Your 3 photos are ready" in html
+    assert "/api/download?p=" in html
+    m._pending_dl.clear()
+
+
 def test_whatsapp_optin_collect_and_admin_flow(admin):
     admin.put("/api/settings", json={"share": {"whatsapp_optin": True}})
     urls = _make_session("session_wa", 2)

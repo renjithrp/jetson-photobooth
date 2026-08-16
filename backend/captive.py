@@ -28,7 +28,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
 log = logging.getLogger("captive")
@@ -104,8 +104,32 @@ app = FastAPI(title="AI Photo Booth (captive)", docs_url=None, redoc_url=None,
               lifespan=lifespan)
 
 
-def _guest_page() -> FileResponse:
-    return FileResponse(FRONTEND / "guest" / "index.html", headers=_NO_CACHE)
+# Booth-owned devices (the kiosk iPad) whose captive probes get a SUCCESS answer so
+# iOS never pops the sign-in sheet over the kiosk app. Comma-separated IPs; give the
+# device a dnsmasq reservation so its IP is stable.
+_KIOSK_IPS = {ip.strip() for ip in os.environ.get("BOOTH_KIOSK_IPS", "").split(",") if ip.strip()}
+_APPLE_SUCCESS = "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"
+
+
+async def _guest_page() -> HTMLResponse:
+    """Serve the guest page with the ready-to-download banner rendered SERVER-SIDE
+    (captive mini-browsers don't reliably run JavaScript — observed live on iOS)."""
+    import html as html_lib
+    text = (FRONTEND / "guest" / "index.html").read_text()
+    disp, title, url = "none", "", "#"
+    try:
+        r = await _client.get("/api/download/pending")
+        j = r.json()
+        if j.get("pending"):
+            disp = "block"
+            title = f"Your {j['count']} photo{'s' if j['count'] > 1 else ''} are ready"
+            url = html_lib.escape(j["download"], quote=True)
+    except Exception:
+        pass
+    text = (text.replace("__PENDING_DISPLAY__", disp)
+                .replace("__PENDING_TITLE__", title)
+                .replace("__PENDING_URL__", url))
+    return HTMLResponse(text, headers=_NO_CACHE)
 
 
 async def _proxy(request: Request, path: str) -> Response:
@@ -141,7 +165,14 @@ async def gateway(request: Request, full_path: str) -> Response:
     if _is_guest_route(path):
         return await _proxy(request, path)
     if path in ("/", "/booth"):
-        return _guest_page()
+        return await _guest_page()
+    # The kiosk iPad must never see the captive sign-in sheet: answer its OS
+    # connectivity probes with the expected "success" so iOS treats the hotspot
+    # as a normal network. (Guests fall through to the redirect below.)
+    if request.client and request.client.host in _KIOSK_IPS:
+        if "generate_204" in path:
+            return Response(status_code=204)
+        return HTMLResponse(_APPLE_SUCCESS)
     # Guests must never reach admin/config/control routes — anything under /api/
     # that isn't an allowlisted guest route is refused here (not redirected, so a
     # scripted probe gets a clean 404 rather than the guest page).
