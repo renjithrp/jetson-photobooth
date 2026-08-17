@@ -270,7 +270,9 @@ class GestureWorker:
             if pid == 0 or p.get("last_seen") == now:  # pseudo / already matched
                 continue
             d = ((cx - p["cx"]) ** 2 + (cy - p["cy"]) ** 2) ** 0.5
-            if d < 1.5 * max(fh, p["fh"]) and d < bestd:
+            # radius floor 0.15: far faces are tiny, and the face-model vs pose
+            # head estimates land ~0.1 apart — too-tight matching churned new ids
+            if d < max(2.0 * max(fh, p["fh"]), 0.15) and d < bestd:
                 best, bestd = pid, d
         if best is None:
             best = self._next_pid
@@ -503,6 +505,16 @@ class GestureWorker:
             if ev["detected"] and getattr(t, "require_face", False):
                 face_ok = gestures.any_face_in_zone(faces, t)
 
+            if lm is None and self._people and now - self._last_dbg > 2.0:
+                # nothing found: log WHY per person (crop/eligibility/wrists), so
+                # a silent no-detection is diagnosable from the journal
+                self._last_dbg = now
+                pdump = {q: {"fh": round(p.get("fh", 0), 3),
+                             "wr": len(p.get("wrists") or []),
+                             "elig": self._eligible(p, t, now),
+                             "age": round(now - p.get("last_seen", 0), 1)}
+                         for q, p in self._people.items()}
+                _log(f"no-hand: crops={crops} hands={hands_n} armed={armed} {pdump}")
             if lm is not None and now - self._last_dbg > 1.5:
                 self._last_dbg = now
                 extra = (" | " + gestures.thumb_debug(lm)) if gtype == "thumbs_up" else ""
