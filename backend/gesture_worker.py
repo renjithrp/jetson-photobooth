@@ -123,6 +123,7 @@ class GestureWorker:
         self._hands = self._make_hands(self._max_hands)
         self._face = None      # short-range face model (lazy)
         self._face_far = None  # full-range fallback for distant subjects (lazy)
+        self._pose = None      # body pose for when even faces are too small (lazy)
         self._hold_start: float | None = None
         self._wave = gestures.WaveDetector()
         self._last_detected = 0.0
@@ -158,9 +159,11 @@ class GestureWorker:
 
     @staticmethod
     def _make_hands(max_hands: int):
+        # 0.55: the tight person/wrist crops + downstream gates carry the false-
+        # positive burden now, and 0.6 was dropping real far-range hands.
         return mp.solutions.hands.Hands(
             max_num_hands=max_hands,
-            min_detection_confidence=0.6, min_tracking_confidence=0.5)
+            min_detection_confidence=0.55, min_tracking_confidence=0.5)
 
     @property
     def _gesture_active(self) -> bool:
@@ -178,6 +181,19 @@ class GestureWorker:
             self._face_far = mp.solutions.face_detection.FaceDetection(
                 model_selection=1, min_detection_confidence=0.4)
         return self._face_far
+
+    def _pose_detector(self):
+        # body pose (lite): beyond ~3.5m/looking-down BOTH face models fail, but
+        # the body still spans half the frame — pose finds it and provides WRIST
+        # anchors for the hand crops. Only runs when no face is found.
+        if self._pose is None:
+            # complexity=1 (pose_landmark_full) is the model BUNDLED in the venv;
+            # complexity=0 (lite) isn't shipped and mediapipe would try to
+            # download it into the root-owned site-packages and retry forever.
+            self._pose = mp.solutions.pose.Pose(
+                model_complexity=1, min_detection_confidence=0.4,
+                min_tracking_confidence=0.4)
+        return self._pose
 
     # ---- MJPEG reader -> detection -------------------------------------------
     def run(self) -> None:
@@ -241,27 +257,30 @@ class GestureWorker:
             if fh <= 0 or fh > 0.9:      # out-of-frame face: unusable reference
                 continue
             seen.append((bb.xmin + bb.width / 2, bb.ymin + bb.height / 2, fh, bb))
-        assigned = set()
         for cx, cy, fh, bb in sorted(seen, key=lambda s: -s[2]):
-            best, bestd = None, 1e9
-            for pid, p in self._people.items():
-                if pid in assigned or pid == 0:   # 0 = faceless-fallback pseudo person
-                    continue
-                d = ((cx - p["cx"]) ** 2 + (cy - p["cy"]) ** 2) ** 0.5
-                if d < 1.5 * max(fh, p["fh"]) and d < bestd:
-                    best, bestd = pid, d
-            if best is None:
-                best = self._next_pid
-                self._next_pid += 1
-                self._people[best] = {"streak": 0, "hold": None, "hits": 0,
-                                      "misses": 0, "last_match": 0.0, "zone_ok": 0.0}
-                _log(f"person {best} appeared")
-            self._people[best].update(cx=cx, cy=cy, fh=fh, bb=bb, last_seen=now)
-            assigned.add(best)
+            self._upsert_person(cx, cy, fh, bb, now)
         for pid in [pid for pid, p in self._people.items()
                     if now - p.get("last_seen", 0) > self.PERSON_TTL]:
             _log(f"person {pid} left")
             del self._people[pid]
+
+    def _upsert_person(self, cx, cy, fh, bb, now, wrists=None) -> int:
+        best, bestd = None, 1e9
+        for pid, p in self._people.items():
+            if pid == 0 or p.get("last_seen") == now:  # pseudo / already matched
+                continue
+            d = ((cx - p["cx"]) ** 2 + (cy - p["cy"]) ** 2) ** 0.5
+            if d < 1.5 * max(fh, p["fh"]) and d < bestd:
+                best, bestd = pid, d
+        if best is None:
+            best = self._next_pid
+            self._next_pid += 1
+            self._people[best] = {"streak": 0, "hold": None, "hits": 0,
+                                  "misses": 0, "last_match": 0.0, "zone_ok": 0.0}
+            _log(f"person {best} appeared")
+        self._people[best].update(cx=cx, cy=cy, fh=fh, bb=bb,
+                                  last_seen=now, wrists=wrists)
+        return best
 
     def _eligible(self, p, t, now) -> bool:
         """Trigger-zone gate: only people whose face sits inside the configured
@@ -287,6 +306,28 @@ class GestureWorker:
             return None, None
         return (np.ascontiguousarray(rgb[py0:py1, px0:px1]),
                 (x0, y0, x1 - x0, y1 - y0))
+
+    def _wrist_crop(self, rgb, p, wx, wy, ex, ey):
+        """Wrist-anchored ROI (pose path). The HAND extends beyond the wrist away
+        from the elbow, so the crop is centred one hand-length along the
+        elbow->wrist direction (a wrist-centred crop cut the fingers off at the
+        top edge — measured live). Tiny crops are upscaled 2x before detection."""
+        dx, dy = wx - ex, wy - ey
+        n = (dx * dx + dy * dy) ** 0.5 or 1e-6
+        cxx = wx + 0.9 * p["fh"] * dx / n
+        cyy = wy + 0.9 * p["fh"] * dy / n
+        r = 2.6 * p["fh"]                # ~1.1 shoulder-widths half-size
+        x0, x1 = max(0.0, cxx - r), min(1.0, cxx + r)
+        y0, y1 = max(0.0, cyy - r), min(1.0, cyy + r)
+        H, W = rgb.shape[:2]
+        px0, px1 = int(x0 * W), int(x1 * W)
+        py0, py1 = int(y0 * H), int(y1 * H)
+        if px1 - px0 < 24 or py1 - py0 < 24:
+            return None, None
+        crop = np.ascontiguousarray(rgb[py0:py1, px0:px1])
+        if max(crop.shape[:2]) < 200:    # give MediaPipe real pixels to chew on
+            crop = cv2.resize(crop, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        return crop, (x0, y0, x1 - x0, y1 - y0)
 
     def _hands_in(self, res, box):
         """(full-frame landmarks, handedness label, score) per detected hand."""
@@ -338,6 +379,39 @@ class GestureWorker:
                     faces = []
             self._track_people(faces, face_fix, now)
 
+            # Far / head-down subject: both face models blind (face < ~0.07 frame
+            # or pitched down at a laptop/phone) — find the BODY instead and
+            # anchor the hand crops on the pose WRISTS. Single-person model, so
+            # it covers the far solo case; groups that close in get face-tracked.
+            if not faces:
+                plm = None
+                try:
+                    pres = self._pose_detector().process(rgb)
+                    plm = pres.pose_landmarks.landmark if pres.pose_landmarks else None
+                except Exception:
+                    plm = None
+                if plm:
+                    ls, rs = plm[11], plm[12]           # shoulders
+                    if ls.visibility > 0.5 and rs.visibility > 0.5:
+                        sw = ((ls.x - rs.x) ** 2 + (ls.y - rs.y) ** 2) ** 0.5
+                        if sw > 0.02:
+                            fh_est = 0.43 * sw          # pseudo face height (gates)
+                            cx = (ls.x + rs.x) / 2
+                            cy = (ls.y + rs.y) / 2 - 0.9 * fh_est
+                            wrists = []
+                            for wi, ei in ((15, 13), (16, 14)):
+                                w, e = plm[wi], plm[ei]
+                                # raised-hand prefilter — generous (face level
+                                # down to a bit below the shoulder line)
+                                if w.visibility > 0.5 and \
+                                        w.y < max(ls.y, rs.y) + 0.6 * sw:
+                                    wrists.append((w.x, w.y, e.x, e.y))
+                            self._upsert_person(
+                                cx, cy, fh_est,
+                                SimpleNamespace(xmin=cx - fh_est, ymin=cy - fh_est,
+                                                width=2 * fh_est, height=2 * fh_est),
+                                now, wrists=wrists)
+
             # one Hands pass per (eligible, currently visible) person's ROI,
             # largest faces first; full-frame fallback when no usable person
             best = None            # (key, ev, pts, pid)
@@ -349,22 +423,32 @@ class GestureWorker:
                     break
                 if now - p.get("last_seen", 0) > 0.5 or not self._eligible(p, t, now):
                     continue
-                crop, box = self._person_crop(rgb, p)
-                if crop is None:
+                # wrist-anchored crops when pose provided wrists; face crop otherwise
+                if p.get("wrists"):
+                    regions = [self._wrist_crop(rgb, p, wx, wy, ex, ey)
+                               for wx, wy, ex, ey in p["wrists"][:2]]
+                    anchor = "wrist"
+                else:
+                    regions = [self._person_crop(rgb, p)]
+                    anchor = "face"
+                regions = [r for r in regions if r[0] is not None]
+                if not regions:
                     continue
                 crops += 1
                 zoomed = True
                 cand_best = None
-                for pts, handed, score in self._hands_in(self._hands.process(crop), box):
-                    hands_n += 1
-                    ev = self._eval_hand(pts, t, gtype, handed,
-                                         fh=p["fh"], fcx=p["cx"], fcy=p["cy"])
-                    ev["score"] = score
-                    key = (ev["detected"], ev["span"])
-                    if cand_best is None or key > cand_best[0]:
-                        cand_best = (key, ev, pts)
-                    if best is None or key > best[0]:
-                        best = (key, ev, pts, pid)
+                for crop, box in regions:
+                    for pts, handed, score in self._hands_in(self._hands.process(crop), box):
+                        hands_n += 1
+                        ev = self._eval_hand(pts, t, gtype, handed,
+                                             fh=p["fh"], fcx=p["cx"], fcy=p["cy"],
+                                             anchor=anchor)
+                        ev["score"] = score
+                        key = (ev["detected"], ev["span"])
+                        if cand_best is None or key > cand_best[0]:
+                            cand_best = (key, ev, pts)
+                        if best is None or key > best[0]:
+                            best = (key, ev, pts, pid)
                 p["match_now"] = bool(cand_best and cand_best[1]["detected"])
             visible = sum(1 for q, p in self._people.items()
                           if q != 0 and now - p.get("last_seen", 0) <= 0.5)
@@ -445,7 +529,8 @@ class GestureWorker:
         except Exception as e:
             _log(f"detect error: {e}")
 
-    def _eval_hand(self, lm, t, gtype, handed=None, fh=0.0, fcx=None, fcy=None) -> dict:
+    def _eval_hand(self, lm, t, gtype, handed=None, fh=0.0, fcx=None, fcy=None,
+                   anchor="face") -> dict:
         """Run every per-hand gate on one hand's landmarks -> verdict dict.
 
         Size gate: MediaPipe hallucinates tiny "hands" on background patterns. A
@@ -458,12 +543,16 @@ class GestureWorker:
         span = gestures.hand_span(lm)
         abs_min = float(getattr(t, "hand_min_size", 0.0))
         scale = float(getattr(t, "hand_face_scale", 0.45))
-        eff_min = max(self.ABS_MIN_FLOOR, scale * fh) \
+        # wrist-anchored (pose) hands get a lower floor: at that range real hands
+        # read ~0.05 of frame, and the tight wrist crop already rules out the
+        # background hallucinations the floor exists for
+        floor = 0.03 if anchor == "wrist" else self.ABS_MIN_FLOOR
+        eff_min = max(floor, scale * fh) \
             if (fh > 0 and scale > 0) else abs_min
         size_ok = span >= eff_min
         near_face = True
         on_face = False
-        if fcx is not None and fh > 0:
+        if anchor == "face" and fcx is not None and fh > 0:
             cx, cy = lm[9].x, lm[9].y
             d = ((cx - fcx) ** 2 + (cy - fcy) ** 2) ** 0.5
             assoc = float(getattr(t, "assoc_face_dist", 4.0))
