@@ -73,8 +73,8 @@ struct LiveView: UIViewRepresentable {
               const pct = v => v == null ? '-' : Math.round(v*100) + '%';
               const yn = v => v === true ? 'Y' : v === false ? 'N' : '-';
               sd.textContent = !ev.hand ? ('no hand' + (ev.tune_mode ? '  [TUNE MODE]' : '')) :
-                'want ' + ev.want + '  hands ' + (ev.hands ?? 1) + '  score ' + (ev.score ?? '-') +
-                (ev.tune_mode ? '  [TUNE MODE]' : '') + '\\n' +
+                'want ' + ev.want + '  people ' + (ev.people ?? 0) + '  hands ' + (ev.hands ?? 1) + '  score ' + (ev.score ?? '-') +
+                (ev.armed === false ? '  [DISARMED]' : '') + (ev.tune_mode ? '  [TUNE MODE]' : '') + '\\n' +
                 'span ' + pct(ev.span) + '  min ' + pct(ev.min_size) + '  face_h ' + (ev.face_h ? pct(ev.face_h) : '-') + '  zoom ' + (ev.zoom ? 'Y' : '-') + '\\n' +
                 'pose ' + yn(ev.match) + '  palm ' + yn(ev.palm) + '  size ' + yn(ev.size_ok) + '  in_frame ' + yn(ev.in_frame) +
                 '  near_face ' + yn(ev.near_face) + '  on_face ' + (ev.on_face ? 'YES' : 'no') + '\\n' +
@@ -109,6 +109,7 @@ struct LiveView: UIViewRepresentable {
                 : !ev.in_frame ? 'hand not fully in frame'
                 : (ev.palm === false && ev.want === 'open_palm') ? 'back of hand \\u2014 show your palm'
                 : !ev.match ? ('pose \\u2260 ' + ev.want)
+                : ev.rearm_wait ? 'lower your hand to re-arm'
                 : ev.cooldown_left > 0 ? ('cooldown ' + ev.cooldown_left + 's')
                 : ev.want === 'wave' ? ('wave ' + (ev.swings||0) + '/3 swings')
                 : ev.hold_progress > 0 ? ('hold ' + (ev.hold_progress*ev.hold_need).toFixed(1) + '/' + ev.hold_need + 's')

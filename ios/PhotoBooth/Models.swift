@@ -95,6 +95,7 @@ struct TriggerConfig: Codable {
     var match_ratio = 0.7
     var hand_face_scale = 0.45
     var assoc_face_dist = 4.0
+    var rearm_clear_seconds = 0.7
 }
 
 /// GET /api/wifi/info — hotspot details + QR codes (data: URIs) for the guest

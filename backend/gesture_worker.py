@@ -107,7 +107,9 @@ class GestureWorker:
     # landmark span reads 0.6-0.9 of the face bbox height; hallucinated
     # background "hands" read <=0.43 of it — hand_face_scale 0.45 splits them.
     ABS_MIN_FLOOR = 0.05   # the face-scaled size gate never drops below this
-    ZOOM_FACE_H = 0.18     # face smaller than this -> run Hands on a subject crop
+    PERSON_TTL = 1.5       # seconds a tracked person survives without their face
+    ZONE_GRACE = 1.0       # zone eligibility persists this long through face flicker
+    MAX_PEOPLE = 3         # per-person hand-search crops per tick (largest first)
 
     def __init__(self) -> None:
         self.base = _detect_backend()
@@ -128,10 +130,12 @@ class GestureWorker:
         self._last_dbg = 0.0
         self._published_clear = False   # sent one "no hand" state since the hand left
         self._dry_fire = 0.0            # last tune-mode "would fire" (capture suppressed)
-        # confirmation state: jitter-proofing for the static-gesture hold
-        self._streak = 0                # consecutive matching detection frames
-        self._hold_hits = 0             # matched frames since the hold started
-        self._hold_misses = 0           # unmatched frames since the hold started
+        # person tracking + per-person confirmation state (no global palm state)
+        self._people: dict = {}         # pid -> tracker + gesture state
+        self._next_pid = 1
+        self._rearmed = True            # palms-down rearm after each fire
+        self._rearm_wait = False
+        self._clear_since = None
         _log(f"backend={self.base} settings={SETTINGS_PATH}")
         _log(f"gesture={getattr(self.trigger, 'gesture_type', 'open_palm')} "
              f"mode={getattr(self.trigger, 'mode', 'gesture')}")
@@ -226,7 +230,88 @@ class GestureWorker:
             return None, buf[s:]
         return buf[s:e + 2], buf[e + 2:]
 
-    # ---- detection (mirrors sony_hub._detect) --------------------------------
+    # ---- person tracking (spec's ByteTrack role, booth-sized) ----------------
+    # Faces are few and move slowly at a booth, so a greedy nearest-face matcher
+    # gives persistent per-person ids without a tracking dependency.
+    def _track_people(self, faces, face_fix, now) -> None:
+        seen = []
+        for f in faces:
+            bb = f.location_data.relative_bounding_box
+            fh = bb.height * face_fix
+            if fh <= 0 or fh > 0.9:      # out-of-frame face: unusable reference
+                continue
+            seen.append((bb.xmin + bb.width / 2, bb.ymin + bb.height / 2, fh, bb))
+        assigned = set()
+        for cx, cy, fh, bb in sorted(seen, key=lambda s: -s[2]):
+            best, bestd = None, 1e9
+            for pid, p in self._people.items():
+                if pid in assigned or pid == 0:   # 0 = faceless-fallback pseudo person
+                    continue
+                d = ((cx - p["cx"]) ** 2 + (cy - p["cy"]) ** 2) ** 0.5
+                if d < 1.5 * max(fh, p["fh"]) and d < bestd:
+                    best, bestd = pid, d
+            if best is None:
+                best = self._next_pid
+                self._next_pid += 1
+                self._people[best] = {"streak": 0, "hold": None, "hits": 0,
+                                      "misses": 0, "last_match": 0.0, "zone_ok": 0.0}
+                _log(f"person {best} appeared")
+            self._people[best].update(cx=cx, cy=cy, fh=fh, bb=bb, last_seen=now)
+            assigned.add(best)
+        for pid in [pid for pid, p in self._people.items()
+                    if now - p.get("last_seen", 0) > self.PERSON_TTL]:
+            _log(f"person {pid} left")
+            del self._people[pid]
+
+    def _eligible(self, p, t, now) -> bool:
+        """Trigger-zone gate: only people whose face sits inside the configured
+        zone may trigger (with a grace window so face flicker doesn't drop them)."""
+        if not getattr(t, "require_face", False):
+            return True
+        if gestures.face_in_zone(p["bb"], t):
+            p["zone_ok"] = now
+        return (now - p["zone_ok"]) < self.ZONE_GRACE
+
+    def _person_crop(self, rgb, p):
+        """Subject ROI: MediaPipe's palm detector downscales its input to ~192px,
+        so a distant hand vanishes in the full frame. A crop around each person's
+        face (hands are raised near the head) is an effective 2-4x zoom; the
+        landmarks are remapped to full-frame coordinates afterwards."""
+        fh, cx, cy = p["fh"], p["cx"], p["cy"]
+        x0, x1 = max(0.0, cx - 3.0 * fh), min(1.0, cx + 3.0 * fh)
+        y0, y1 = max(0.0, cy - 3.0 * fh), min(1.0, cy + 2.5 * fh)
+        H, W = rgb.shape[:2]
+        px0, px1 = int(x0 * W), int(x1 * W)
+        py0, py1 = int(y0 * H), int(y1 * H)
+        if px1 - px0 < 40 or py1 - py0 < 40:
+            return None, None
+        return (np.ascontiguousarray(rgb[py0:py1, px0:px1]),
+                (x0, y0, x1 - x0, y1 - y0))
+
+    def _hands_in(self, res, box):
+        """(full-frame landmarks, handedness label, score) per detected hand."""
+        out = []
+        lms = res.multi_hand_landmarks or []
+        hs = res.multi_handedness or []
+        for i, hl in enumerate(lms):
+            handed, score = None, 0.0
+            if i < len(hs):
+                try:
+                    handed = hs[i].classification[0].label
+                    score = hs[i].classification[0].score
+                except Exception:
+                    pass
+            if box:
+                zx, zy, zw, zh = box
+                pts = [SimpleNamespace(x=zx + q.x * zw, y=zy + q.y * zh)
+                       for q in hl.landmark]
+            else:
+                pts = list(hl.landmark)
+            out.append((pts, handed, score))
+        return out
+
+    # ---- detection: faces -> people -> per-person ROI -> hands -> per-person
+    #      confirmation -> single trigger (see the pipeline note in the header)
     def _detect(self, jpeg: bytes) -> None:
         try:
             arr = np.frombuffer(jpeg, dtype=np.uint8)
@@ -236,161 +321,155 @@ class GestureWorker:
             rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             t = self.trigger
             gtype = getattr(t, "gesture_type", "open_palm")
+            now = time.time()
 
-            # ---- face pass FIRST: the subject's face size calibrates the hand
-            # size gate, anchors the hand to a person, and drives the far-subject
-            # zoom below. Face detection is cheap at ~6fps.
+            # faces: short-range model first; full-range (~5m) fallback whose
+            # boxes read about half the size, x2 keeps the size calibration.
             try:
                 faces = self._face_detector().process(rgb).detections or []
             except Exception:
                 faces = []
             face_fix = 1.0
             if not faces:
-                # Far subject: the short-range face model gives out around ~2.5m,
-                # which also disabled the zoom crop exactly when it was needed.
-                # The full-range model reaches ~5m; its boxes read about HALF the
-                # size of the short-range ones, so x2 keeps the hand_face_scale
-                # calibration intact.
                 try:
                     faces = self._far_face_detector().process(rgb).detections or []
                     face_fix = 2.0
                 except Exception:
                     faces = []
-            # A face bbox can exceed the frame (partially-out-of-frame face reads
-            # height > 1.0) — that's not a usable subject-size reference, so treat
-            # oversized boxes as "no calibration" and fall back to hand_min_size.
-            face_h = max((f.location_data.relative_bounding_box.height
-                          for f in faces), default=0.0) * face_fix
-            if face_h > 0.9:
-                face_h = 0.0
+            self._track_people(faces, face_fix, now)
 
-            # ---- far subject: MediaPipe's palm detector downscales its input to
-            # ~192px, so a distant hand simply vanishes below its resolution. When
-            # the subject's face reads small, run Hands on a crop around the face
-            # (hands are raised near the head) — an effective 2-4x zoom — and map
-            # the landmarks back to full-frame coordinates afterwards.
-            zoom = None
-            if 0 < face_h < self.ZOOM_FACE_H:
-                bb = max((f.location_data.relative_bounding_box for f in faces),
-                         key=lambda b: b.height)
-                cx = bb.xmin + bb.width / 2
-                x0, x1 = max(0.0, cx - 3.0 * face_h), min(1.0, cx + 3.0 * face_h)
-                y0, y1 = max(0.0, bb.ymin - 2.5 * face_h), min(1.0, bb.ymin + 3.0 * face_h)
-                H, W = rgb.shape[:2]
-                px0, px1 = int(x0 * W), int(x1 * W)
-                py0, py1 = int(y0 * H), int(y1 * H)
-                if px1 - px0 > 40 and py1 - py0 > 40:
-                    zoom = (x0, y0, x1 - x0, y1 - y0)
-            if zoom:
-                res = self._hands.process(
-                    np.ascontiguousarray(rgb[py0:py1, px0:px1]))
-            else:
-                res = self._hands.process(rgb)
-            hands_lm = res.multi_hand_landmarks
+            # one Hands pass per (eligible, currently visible) person's ROI,
+            # largest faces first; full-frame fallback when no usable person
+            best = None            # (key, ev, pts, pid)
+            hands_n = 0
+            zoomed = False
+            crops = 0
+            for pid, p in sorted(self._people.items(), key=lambda kv: -kv[1]["fh"]):
+                if crops >= self.MAX_PEOPLE:
+                    break
+                if now - p.get("last_seen", 0) > 0.5 or not self._eligible(p, t, now):
+                    continue
+                crop, box = self._person_crop(rgb, p)
+                if crop is None:
+                    continue
+                crops += 1
+                zoomed = True
+                cand_best = None
+                for pts, handed, score in self._hands_in(self._hands.process(crop), box):
+                    hands_n += 1
+                    ev = self._eval_hand(pts, t, gtype, handed,
+                                         fh=p["fh"], fcx=p["cx"], fcy=p["cy"])
+                    ev["score"] = score
+                    key = (ev["detected"], ev["span"])
+                    if cand_best is None or key > cand_best[0]:
+                        cand_best = (key, ev, pts)
+                    if best is None or key > best[0]:
+                        best = (key, ev, pts, pid)
+                p["match_now"] = bool(cand_best and cand_best[1]["detected"])
+            visible = sum(1 for q, p in self._people.items()
+                          if q != 0 and now - p.get("last_seen", 0) <= 0.5)
+            if crops == 0 and visible == 0:
+                # NO face anywhere (not even the far model): full-frame pass with
+                # the absolute gates, tracked as pseudo-person 0. Deliberately NOT
+                # used when people are visible but zone-ineligible — that would
+                # bypass the trigger zone.
+                for pts, handed, score in self._hands_in(self._hands.process(rgb), None):
+                    hands_n += 1
+                    ev = self._eval_hand(pts, t, gtype, handed)
+                    ev["score"] = score
+                    key = (ev["detected"], ev["span"])
+                    if best is None or key > best[0]:
+                        best = (key, ev, pts, 0)
 
-            def _pts(hl):
-                """Landmarks in full-frame normalized coords (remaps zoom crops)."""
-                if not zoom:
-                    return list(hl.landmark)
-                zx, zy, zw, zh = zoom
-                return [SimpleNamespace(x=zx + p.x * zw, y=zy + p.y * zh)
-                        for p in hl.landmark]
-
-            score = 0.0
-            if hands_lm and res.multi_handedness:
-                try:
-                    score = res.multi_handedness[0].classification[0].score
-                except Exception:
-                    score = 0.0
-            # NOTE: `score` is the left/right HANDEDNESS confidence (>=0.5 by
-            # construction whenever a hand is found) — logged for debugging but
-            # not gated on; detection confidence is enforced by the Hands()
-            # min_detection_confidence instead.
-
-            # Evaluate EVERY tracked hand (trigger.max_hands) and act on the best
-            # candidate: a fully passing hand wins; otherwise the largest hand is
-            # what the overlay shows, so you can see why it was rejected.
-            labels = []
-            for h in (res.multi_handedness or []):
-                try:
-                    labels.append(h.classification[0].label)
-                except Exception:
-                    labels.append(None)
-            best = None
-            for i, hl in enumerate(hands_lm or []):
-                handed = labels[i] if i < len(labels) else None
-                pts = _pts(hl)
-                ev = self._eval_hand(pts, t, gtype, faces, face_h, handed)
-                key = (ev["detected"], ev["span"])
-                if best is None or key > best[0]:
-                    best = (key, ev, pts)
             if best is None:
-                lm, ev = None, {"in_frame": False, "span": 0.0, "eff_min": 0.0,
-                                "size_ok": True, "near_face": True, "on_face": False,
-                                "gesture_ok": False, "detected": False, "palm": None}
+                lm, ev, pid = None, {"in_frame": False, "span": 0.0, "eff_min": 0.0,
+                                     "size_ok": True, "near_face": True,
+                                     "on_face": False, "gesture_ok": False,
+                                     "detected": False, "palm": None, "score": 0.0}, None
             else:
-                _, ev, lm = best
-            detected = ev["detected"]
+                _, ev, lm, pid = best
+
+            hold = float(getattr(t, "gesture_hold_seconds", 1.5))
+            cooldown = float(getattr(t, "cooldown_seconds", 5.0))
+            confirm = int(getattr(t, "confirm_frames", 3))
+            ratio = float(getattr(t, "match_ratio", 0.7))
+
+            # ---- trigger state ----
+            armed = self._armed(now, cooldown)
+            if gtype == "wave":
+                # wave stays a single global temporal detector on the best hand
+                if armed:
+                    self._step_wave(ev["detected"], lm, now, t, cooldown)
+            else:
+                # per-person confirmation (spec: no global palm state) — the full-
+                # frame fallback uses pseudo-person 0 so a faceless frame still works
+                if best is not None and pid == 0:
+                    p0 = self._people.setdefault(0, {
+                        "streak": 0, "hold": None, "hits": 0, "misses": 0,
+                        "last_match": 0.0, "zone_ok": 0.0,
+                        "cx": 0.5, "cy": 0.5, "fh": 0.0})
+                    p0["last_seen"] = now
+                    p0["match_now"] = ev["detected"]
+                for qid, p in list(self._people.items()):
+                    self._step_person(qid, p, bool(p.get("match_now")), t, now,
+                                      hold, cooldown, confirm, ratio, armed)
+                    p["match_now"] = False
 
             face_ok = None
-            if detected and getattr(t, "require_face", False):
+            if ev["detected"] and getattr(t, "require_face", False):
                 face_ok = gestures.any_face_in_zone(faces, t)
 
-            now = time.time()
             if lm is not None and now - self._last_dbg > 1.5:
                 self._last_dbg = now
                 extra = (" | " + gestures.thumb_debug(lm)) if gtype == "thumbs_up" else ""
                 if gtype == "wave":
                     extra += f" swings={self._wave.swings}"
-                _log(f"hand: want={gtype} hands={len(hands_lm or [])} "
-                     f"face_h={face_h:.2f} zoom={bool(zoom)} "
-                     f"match={ev['gesture_ok']} score={score:.2f} "
+                pstate = self._people.get(pid, {})
+                _log(f"hand: want={gtype} people={len(self._people)} pid={pid} "
+                     f"hands={hands_n} crops={crops} "
+                     f"match={ev['gesture_ok']} score={ev['score']:.2f} "
                      f"in_frame={ev['in_frame']} span={ev['span']:.2f} "
                      f"min={ev['eff_min']:.2f} size_ok={ev['size_ok']} "
                      f"near_face={ev['near_face']} on_face={ev['on_face']} "
-                     f"palm={ev.get('palm')} in_zone={face_ok} "
-                     f"streak={self._streak} -> fire={detected}{extra}")
+                     f"palm={ev.get('palm')} in_zone={face_ok} armed={armed} "
+                     f"streak={pstate.get('streak', 0)} -> fire={ev['detected']}{extra}")
 
-            hold = float(getattr(t, "gesture_hold_seconds", 1.5))
-            cooldown = float(getattr(t, "cooldown_seconds", 5.0))
-            self._step_trigger(detected, gtype, lm, now, t, hold, cooldown)
             self._publish(gtype, lm, ev["gesture_ok"], ev["in_frame"], ev["on_face"],
                           face_ok, now, hold, cooldown, ev["span"], ev["size_ok"],
                           ev["eff_min"], ev["near_face"],
-                          face_h=face_h, hands=len(hands_lm or []), score=score,
-                          palm=ev.get("palm"), zoom=bool(zoom))
+                          face_h=self._people.get(pid, {}).get("fh", 0.0) if pid else 0.0,
+                          hands=hands_n, score=ev["score"], palm=ev.get("palm"),
+                          zoom=zoomed, person=self._people.get(pid),
+                          people_n=len([q for q in self._people if q != 0]),
+                          armed=armed, rearm_wait=self._rearm_wait)
         except Exception as e:
             _log(f"detect error: {e}")
 
-    def _eval_hand(self, lm, t, gtype, faces, face_h, handed=None) -> dict:
+    def _eval_hand(self, lm, t, gtype, handed=None, fh=0.0, fcx=None, fcy=None) -> dict:
         """Run every per-hand gate on one hand's landmarks -> verdict dict.
 
         Size gate: MediaPipe hallucinates tiny "hands" on background patterns. A
-        hand is proportional to its owner's face, so when a face is visible the
-        minimum scales with the SUBJECT (near guest -> bigger hand required, far
-        guest -> relaxed); falls back to the absolute hand_min_size when the face
-        detector flickers out. Association: the hand must be near a face — a hand
-        (real or hallucinated) floating far from any person can't fire."""
+        hand is proportional to its owner's face, so the minimum scales with the
+        SUBJECT this hand was found on (fh); falls back to the absolute
+        hand_min_size for the faceless full-frame pass. Association: the hand
+        must be near ITS person's face, and a hand sitting ON the face is a
+        face mis-read."""
         in_frame = gestures.hand_fully_in_frame(lm)
         span = gestures.hand_span(lm)
         abs_min = float(getattr(t, "hand_min_size", 0.0))
         scale = float(getattr(t, "hand_face_scale", 0.45))
-        eff_min = max(self.ABS_MIN_FLOOR, scale * face_h) \
-            if (face_h > 0 and scale > 0) else abs_min
+        eff_min = max(self.ABS_MIN_FLOOR, scale * fh) \
+            if (fh > 0 and scale > 0) else abs_min
         size_ok = span >= eff_min
         near_face = True
         on_face = False
-        if faces:
+        if fcx is not None and fh > 0:
             cx, cy = lm[9].x, lm[9].y
-            d, fh = min(
-                ((((cx - (bb.xmin + bb.width / 2)) ** 2 +
-                   (cy - (bb.ymin + bb.height / 2)) ** 2) ** 0.5), bb.height)
-                for f in faces
-                for bb in (f.location_data.relative_bounding_box,))
+            d = ((cx - fcx) ** 2 + (cy - fcy) ** 2) ** 0.5
             assoc = float(getattr(t, "assoc_face_dist", 4.0))
             if assoc > 0:
-                near_face = d <= assoc * max(fh, 1e-6)
-            on_face = gestures.hand_on_face(cx, cy, faces)
+                near_face = d <= assoc * fh
+            on_face = d < 0.45 * fh
         gesture_ok = in_frame and gestures.gesture_matches(gtype, lm, handed)
         return {"in_frame": in_frame, "span": span, "eff_min": eff_min,
                 "size_ok": size_ok, "near_face": near_face, "on_face": on_face,
@@ -398,73 +477,93 @@ class GestureWorker:
                 "palm": gestures.palm_side(lm, handed),
                 "detected": gesture_ok and size_ok and near_face and not on_face}
 
-    def _step_trigger(self, detected, gtype, lm, now, t, hold, cooldown) -> None:
-        """Hold/cooldown/fire state machine (split from _detect so the overlay
-        state can be published on every path, including the early returns here)."""
-        try:
-            if gtype == "wave":
-                # Temporal trigger: no hold — fire the moment the palm finishes
-                # its 3rd alternating swing (~ waving twice). Brief tracking
-                # gaps (<0.5s) keep the swing count; longer ones reset it.
-                if detected:
-                    if now - self._last_fire < cooldown:
-                        return
-                    self._last_detected = now
-                    if self._wave.update(now, lm):
-                        self._last_fire = now
-                        delay = float(getattr(t, "gesture_start_delay", 0.0))
-                        if delay > 0:
-                            time.sleep(delay)
-                        self._fire()
-                elif now - self._last_detected > 0.5:
-                    self._wave.reset()
-                return
-            # Static gestures: jitter-proofed hold. A hold only STARTS after
-            # CONFIRM_FRAMES consecutive matches (hallucinated matches are
-            # unstable frame to frame; a real pose is steady), and only FIRES if
-            # >= MATCH_RATIO of the frames across the hold window matched.
-            confirm = int(getattr(t, "confirm_frames", 3))
-            match_ratio = float(getattr(t, "match_ratio", 0.7))
-            if detected:
-                if now - self._last_fire < cooldown:
-                    return
-                self._last_detected = now
-                self._streak += 1
-                if not self._hold_start:
-                    if self._streak < confirm:
-                        return                      # still confirming
-                    self._hold_start = now
-                    self._hold_hits, self._hold_misses = 1, 0
-                else:
-                    self._hold_hits += 1
-                ratio = self._hold_hits / (self._hold_hits + self._hold_misses)
-                if now - self._hold_start >= hold and ratio >= match_ratio:
-                    self._hold_start = None
-                    self._streak = 0
-                    self._last_fire = now
-                    delay = float(getattr(t, "gesture_start_delay", 0.0))
-                    if delay > 0:
-                        time.sleep(delay)
-                    self._fire()
+    # ---- trigger state machines ----------------------------------------------
+    def _armed(self, now, cooldown) -> bool:
+        """One trigger per session, then palms-DOWN rearm: after a fire, every
+        matching palm must disappear and STAY clear for rearm_clear_seconds
+        before a new confirmation can begin — a hand held up through the whole
+        photo can't immediately retrigger when the cooldown lapses."""
+        self._rearm_wait = False
+        if self._last_fire and now - self._last_fire < cooldown:
+            return False
+        if self._last_fire and not self._rearmed:
+            self._rearm_wait = True
+            if any(now - p.get("last_match", 0) < 0.4 for p in self._people.values()):
+                self._clear_since = None
+                return False
+            if self._clear_since is None:
+                self._clear_since = now
+                return False
+            if now - self._clear_since < float(getattr(self.trigger,
+                                                       "rearm_clear_seconds", 0.7)):
+                return False
+            self._rearmed = True
+            self._rearm_wait = False
+            _log("gesture rearmed (palms clear)")
+        return True
+
+    def _step_wave(self, detected, lm, now, t, cooldown) -> None:
+        """Wave: single global temporal detector on the best hand — fires on the
+        3rd alternating swing; brief tracking gaps keep the count."""
+        if detected and lm is not None:
+            self._last_detected = now
+            if self._wave.update(now, lm):
+                self._last_fire = now
+                delay = float(getattr(t, "gesture_start_delay", 0.0))
+                if delay > 0:
+                    time.sleep(delay)
+                self._fire()
+        elif now - self._last_detected > 0.5:
+            self._wave.reset()
+
+    def _step_person(self, pid, p, detected, t, now, hold, cooldown,
+                     confirm, ratio, armed) -> None:
+        """Per-person jitter-proofed hold (no global palm state): a hold STARTS
+        after `confirm` consecutive matching frames and FIRES only if >= `ratio`
+        of the frames across the hold window matched. Any one person confirming
+        triggers the booth; _armed() then locks everyone out."""
+        if detected:
+            p["last_match"] = now
+        if not armed:
+            p["streak"], p["hold"] = 0, None
+            return
+        if detected:
+            p["streak"] += 1
+            if not p["hold"]:
+                if p["streak"] < confirm:
+                    return                      # still confirming
+                p["hold"] = now
+                p["hits"], p["misses"] = 1, 0
             else:
-                self._streak = 0
-                if self._hold_start:
-                    self._hold_misses += 1
-                    total = self._hold_hits + self._hold_misses
-                    ratio = self._hold_hits / total
-                    # brief flicker (<0.5s) is tolerated, but a hold that's mostly
-                    # misses is jitter, not a held pose — drop it early
-                    if now - self._last_detected > 0.5 or \
-                            (total >= 6 and ratio < match_ratio):
-                        self._hold_start = None
-                        self._hold_hits = self._hold_misses = 0
-        except Exception as e:
-            _log(f"detect error: {e}")
+                p["hits"] += 1
+            r = p["hits"] / (p["hits"] + p["misses"])
+            if now - p["hold"] >= hold and r >= ratio:
+                p["hold"], p["streak"] = None, 0
+                self._last_fire = now
+                self._rearmed = False
+                self._clear_since = None
+                _log(f"person {pid} confirmed ({p['hits']}/{p['hits'] + p['misses']}) -> trigger")
+                delay = float(getattr(t, "gesture_start_delay", 0.0))
+                if delay > 0:
+                    time.sleep(delay)
+                self._fire()
+        else:
+            p["streak"] = 0
+            if p["hold"]:
+                p["misses"] += 1
+                total = p["hits"] + p["misses"]
+                # brief flicker (<0.5s) is tolerated, but a hold that's mostly
+                # misses is jitter, not a held pose — drop it early
+                if now - p["last_match"] > 0.5 or \
+                        (total >= 6 and p["hits"] / total < ratio):
+                    p["hold"] = None
+                    p["hits"] = p["misses"] = 0
 
     def _publish(self, gtype, lm, gesture_ok, in_frame, on_face, face_ok,
                  now, hold, cooldown, span=0.0, size_ok=True, min_size=0.0,
                  near_face=True, face_h=0.0, hands=0, score=0.0, palm=None,
-                 zoom=False) -> None:
+                 zoom=False, person=None, people_n=0, armed=True,
+                 rearm_wait=False) -> None:
         """Push the detection verdict to the backend, which rebroadcasts it on the
         kiosk WebSocket bus — that's what the on-video gesture overlay draws. Sent
         per detection frame while a hand is visible, plus ONE clearing message when
@@ -489,22 +588,27 @@ class GestureWorker:
                 "near_face": bool(near_face),
                 "palm": palm,
                 "zoom": bool(zoom),
-                "confirming": self._hold_start is None and self._streak > 0,
+                "confirming": bool(person and not person.get("hold")
+                                   and person.get("streak", 0) > 0),
                 "on_face": bool(on_face),
                 "face_in_zone": face_ok,
                 "hold_need": hold,
-                "hold_progress": round(min(1.0, (now - self._hold_start) / hold), 3)
-                                 if (self._hold_start and hold > 0) else 0.0,
+                "hold_progress": round(min(1.0, (now - person["hold"]) / hold), 3)
+                                 if (person and person.get("hold") and hold > 0) else 0.0,
                 "cooldown_left": round(cd_left, 1),
                 "swings": self._wave.swings if gtype == "wave" else None,
                 # tuning telemetry (for the on-screen stats panel)
                 "face_h": round(face_h, 3),
                 "hands": hands,
                 "score": round(score, 2),
-                "streak": self._streak,
-                "hold_ratio": round(self._hold_hits /
-                                    (self._hold_hits + self._hold_misses), 2)
-                              if self._hold_start and (self._hold_hits + self._hold_misses)
+                "people": people_n,
+                "armed": bool(armed),
+                "rearm_wait": bool(rearm_wait),
+                "streak": person.get("streak", 0) if person else 0,
+                "hold_ratio": round(person["hits"] /
+                                    (person["hits"] + person["misses"]), 2)
+                              if (person and person.get("hold")
+                                  and (person["hits"] + person["misses"]))
                               else None,
                 "tune_mode": bool(getattr(self.trigger, "tune_mode", False)),
                 "would_fire": (now - self._dry_fire) < 2.5,

@@ -87,6 +87,8 @@ struct TriggerTuneView: View {
                        $cfg.hand_face_scale, 0...1, step: 0.05)
                 slider(String(format: "Max hand-face distance %.1f face-heights (0 = off)", cfg.assoc_face_dist),
                        $cfg.assoc_face_dist, 0...10, step: 0.5)
+                slider(String(format: "Re-arm after palms lowered %.1fs", cfg.rearm_clear_seconds),
+                       $cfg.rearm_clear_seconds, 0...3, step: 0.1)
             }
         }
         .onChange(of: cfg.gesture_type) { _ in apply() }
@@ -103,6 +105,7 @@ struct TriggerTuneView: View {
         .onChange(of: cfg.match_ratio) { _ in apply() }
         .onChange(of: cfg.hand_face_scale) { _ in apply() }
         .onChange(of: cfg.assoc_face_dist) { _ in apply() }
+        .onChange(of: cfg.rearm_clear_seconds) { _ in apply() }
     }
 
     private func slider(_ label: String, _ v: Binding<Double>,

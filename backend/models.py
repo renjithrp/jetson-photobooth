@@ -53,6 +53,10 @@ class TriggerSettings(BaseModel):
     match_ratio: float = Field(0.7, ge=0.0, le=1.0)   # min matched share of frames across the hold window
     hand_face_scale: float = Field(0.45, ge=0, le=1)  # min hand span as a fraction of face height (0 = off; falls back to hand_min_size)
     assoc_face_dist: float = Field(4.0, ge=0, le=10)  # hand must be within this many face-heights of a face (0 = off; 4 covers a fully extended arm)
+    # Palms-down rearm: after a capture, every matching palm must stay LOWERED
+    # for this long before gestures re-arm — a hand held up through the photo
+    # can't retrigger the booth the moment the cooldown lapses.
+    rearm_clear_seconds: float = Field(0.7, ge=0, le=5)
     cooldown_seconds: float = Field(5.0, ge=0)       # ignore triggers right after a session
     # Face gating — require a face inside a target zone before a gesture counts.
     # Stops the booth firing when no one is actually standing in front of it.
