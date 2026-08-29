@@ -61,16 +61,18 @@ def test_os_probes_redirect_to_the_welcome_page():
 CNA_UA = {"user-agent": "CaptiveNetworkSupport-355.200.27 wispr"}
 
 
-def test_welcome_page_says_connected_and_has_no_camera():
-    """The sign-in window can't open a camera, so the selfie flow must not appear
-    there at all — it silently does nothing when tapped."""
+def test_welcome_page_is_only_a_way_into_safari():
+    """The sign-in window can't open a camera, so its ONLY job is handing the guest
+    to Safari. No "connected" confirmation — the guest can see they connected, and
+    it only stood between them and the photos."""
     r = client.get("/welcome")
     assert r.status_code == 200
-    assert "Wi-Fi connected" in r.text
-    assert "x-safari-http://" in r.text
+    assert "x-safari-http://" in r.text            # the escape into Safari
+    assert "Open the photo booth" in r.text        # ...as a real button
+    assert "onclick" in r.text                     # tapping anywhere counts too
     assert "Use Without Internet" in r.text        # written fallback steps
-    assert 'id="selfie"' not in r.text             # no camera input
-    assert "selfie" not in r.text.lower()          # and no mention of one
+    assert 'id="selfie"' not in r.text             # no camera input here
+    assert "Wi-Fi connected" not in r.text         # no success screen
 
 
 def test_captive_window_hitting_the_app_still_gets_the_handoff():

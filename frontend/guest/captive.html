@@ -5,64 +5,56 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Photo Booth</title>
 <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
-<!-- Deliberately JS-free and self-contained: this is rendered inside the phone's
-     Wi-Fi sign-in window (iOS Captive Network Assistant), which does not reliably
-     run JavaScript and cannot open the camera. -->
+<!-- Rendered inside the phone's Wi-Fi sign-in window, which cannot open the camera.
+     Its ONLY job is to get the guest into Safari, where the camera works — there is
+     deliberately no "connected" confirmation here, because the guest can already see
+     they connected and it just delayed them.
+
+     The automatic hand-off below is kept but is NOT relied on: WebKit wants a user
+     gesture before navigating to an app scheme, and it was observed being ignored.
+     So the whole page is a tap target for the same link — a tap anywhere counts as
+     the gesture and goes to Safari. -->
+<meta http-equiv="refresh" content="0;url=__SAFARI_URL__">
+<script>location.replace("__SAFARI_URL__");</script>
 <style>
-  :root { --bg:#0d0f14; --card:#171a21; --fg:#f1f3f7; --mut:#9aa3b2;
-          --accent:#5b8cff; --ok:#34d399; }
+  :root { --bg:#0d0f14; --card:#171a21; --fg:#f1f3f7; --mut:#9aa3b2; --accent:#5b8cff; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  body { margin:0; padding:28px 20px 48px; min-height:100vh; text-align:center;
-         background:var(--bg); color:var(--fg);
+  html,body { margin:0; min-height:100%; }
+  body { background:var(--bg); color:var(--fg); text-align:center;
+         padding:34px 20px 40px;
          font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-  .tick { width:64px; height:64px; margin:6px auto 10px; border-radius:50%;
-          background:var(--ok); color:#06281c; font-size:34px; font-weight:800;
-          line-height:64px; }
-  h1 { font-size:1.55rem; margin:6px 0 2px; }
-  p.net { color:var(--ok); font-size:.95rem; margin:0 0 18px; font-weight:600; }
-  p.lead { color:var(--mut); font-size:1rem; margin:10px auto 22px; max-width:30rem; }
-  .btn { display:block; width:100%; max-width:22rem; margin:0 auto;
-         background:var(--accent); color:#fff; text-decoration:none;
-         border-radius:14px; padding:17px 20px; font-size:1.12rem; font-weight:700; }
-  .btn.white { background:#fff; color:#0d9488; }
-  .card { background:var(--card); border-radius:16px; padding:20px 18px;
-          margin:0 auto 22px; max-width:30rem; }
-  .card h2 { font-size:1.15rem; margin:0 0 10px; }
-  ol { text-align:left; color:var(--fg); margin:14px auto 0; max-width:26rem;
-       padding-left:22px; line-height:1.75; font-size:1rem; }
-  ol b { color:#fff; }
-  .addr { display:inline-block; background:#0b0d12; border:1px solid #2a3040;
-          border-radius:9px; padding:4px 10px; font-weight:700;
-          font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
-  .sep { color:var(--mut); font-size:.9rem; margin:26px 0 12px; }
-  /* The name only resolves via the booth's DNS; a phone on encrypted DNS needs the IP. */
-  .alt { color:var(--mut); font-size:.85rem; }
+  a { text-decoration:none; }
+  .go { display:block; background:var(--accent); color:#fff; border-radius:18px;
+        padding:26px 20px; font-size:1.5rem; font-weight:800; line-height:1.25;
+        max-width:26rem; margin:0 auto; box-shadow:0 8px 26px rgba(91,140,255,.35); }
+  .go small { display:block; font-size:.95rem; font-weight:600; opacity:.9;
+              margin-top:8px; }
+  .dl { display:block; background:#fff; color:#0d9488; border-radius:16px;
+        padding:20px; font-size:1.2rem; font-weight:800; max-width:26rem;
+        margin:0 auto 20px; }
+  .dl small { display:block; font-size:.9rem; font-weight:600; opacity:.75; margin-top:6px; }
+  .steps { color:var(--mut); font-size:.9rem; line-height:1.7; margin:30px auto 0;
+           max-width:26rem; }
+  .addr { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--fg);
+          font-weight:700; }
 </style>
 </head>
-<body>
-  <div class="tick">&#10003;</div>
-  <h1>Wi-Fi connected</h1>
-  <p class="net">You&rsquo;re on the photo booth network.</p>
+<body onclick="location.href='__SAFARI_URL__'">
+  <!-- Photos already picked on the booth iPad: works right here, no Safari needed. -->
+  <a class="dl" id="pending" style="display:__PENDING_DISPLAY__" href="__PENDING_URL__">
+    __PENDING_TITLE__
+    <small>Tap to download</small>
+  </a>
 
-  <!-- Photos already picked for this guest on the booth iPad. This path works
-       right here in the sign-in window — it's just a download, no camera. -->
-  <div class="card" id="pending" style="display:__PENDING_DISPLAY__">
-    <h2>__PENDING_TITLE__</h2>
-    <a class="btn white" href="__PENDING_URL__">Download my photos</a>
-  </div>
+  <a class="go" href="__SAFARI_URL__">
+    Open the photo booth
+    <small>Opens in Safari &mdash; the camera doesn&rsquo;t work in this window</small>
+  </a>
 
-  <p class="lead">Open the photo booth in Safari to get your photos.</p>
-
-  <a class="btn" href="__SAFARI_URL__">Open photo booth</a>
-
-  <p class="sep">If that button doesn&rsquo;t open Safari:</p>
-  <div class="card">
-    <ol>
-      <li>Tap <b>Cancel</b> (top-left), then <b>Use Without Internet</b>.</li>
-      <li>Open the <b>Safari</b> app.</li>
-      <li>Go to <span class="addr">__BOOTH_HOST__</span><br>
-        <span class="alt">or <span class="addr">__BOOTH_IP__</span> if that doesn&rsquo;t load</span></li>
-    </ol>
-  </div>
+  <p class="steps">
+    Nothing happened? Tap <b>Cancel</b> (top-left), then <b>Use Without Internet</b>,
+    open <b>Safari</b> and go to <span class="addr">__BOOTH_HOST__</span>
+    <br>(or <span class="addr">__BOOTH_IP__</span>)
+  </p>
 </body>
 </html>
