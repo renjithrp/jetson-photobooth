@@ -126,6 +126,16 @@ def test_login_lockout_after_repeated_failures(client):
         main._login_fails.clear()   # don't leak the lockout into other tests
 
 
+def test_hotspot_guests_reports_opaque_devices(client):
+    """The kiosk needs to spot a newly joined phone to confirm the Wi-Fi step on
+    screen — but this page is open on the LAN, so no MACs or IPs come back."""
+    j = client.get("/api/hotspot/guests").json()
+    assert set(j) == {"count", "devices"}
+    assert j["count"] == len(j["devices"]) or j["count"] >= len(j["devices"])
+    for d in j["devices"]:
+        assert len(d) == 10 and all(c in "0123456789abcdef" for c in d)
+
+
 def test_health(client):
     j = client.get("/api/system/info").json()
     assert "version" in j and "disk" in j and "camera" in j

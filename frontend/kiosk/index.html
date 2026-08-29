@@ -48,7 +48,14 @@
   .join-cap { font-size:1.3vw; font-weight:700; line-height:1.25; text-align:center;
               text-shadow:0 2px 8px #000c; }
   .join-cap span { font-weight:600; opacity:.85; font-size:1.1vw; }
-  #joincorner.hidden, #findcard.hidden { display:none; }
+  #joincorner.hidden, #findcard.hidden, #joinok.hidden { display:none; }
+  /* Confirms a Wi-Fi join on the BOOTH screen. Without a captive sheet the guest's
+     phone says nothing, so they don't know step 1 worked or that step 2 exists. */
+  .join-ok { margin-top:.5vh; font-size:1.15vw; font-weight:800; line-height:1.3;
+             text-align:center; color:#052e1b; background:#34d399;
+             border-radius:10px; padding:.5vh .6vw;
+             animation: joinpulse 1.1s ease-in-out 3; }
+  @keyframes joinpulse { 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.06); } }
   #ipbadge { position:fixed; left:14px; bottom:12px; font-size:1.1vw; opacity:.7;
     background:#0007; padding:6px 12px; border-radius:999px; }
   #cambadge { position:fixed; right:14px; top:12px; font-size:1.2vw; font-weight:700;
@@ -85,6 +92,7 @@
       <div class="join-card hidden" id="findcard">
         <div class="qr"><img id="findqr" alt="Find your photos QR"></div>
         <div class="join-cap">2. Scan to get<br>your photos</div>
+        <div class="join-ok hidden" id="joinok">&#10003; Phone connected &mdash;<br>scan this one next</div>
       </div>
     </div>
   </div>
@@ -224,9 +232,9 @@ async function loadInfo(){
 }
 
 async function loadWifi(){
-  // Single "join Wi-Fi" QR on the attract screen when the guest hotspot is up.
-  // On joining, the phone's captive-portal popup auto-opens the find-your-photos
-  // page (served over HTTP on :80 by backend/captive.py) — one scan does both.
+  // Two QRs on the attract screen when the guest hotspot is up: join, then photos.
+  // (It used to be one — a captive popup opened the photo page automatically. The
+  // hotspot is pass-through now, so no popup fires and step 2 is a real step.)
   try{
     const w = await (await fetch("/api/wifi/info")).json();
     if (w.active && w.join_qr){
@@ -241,6 +249,27 @@ async function loadWifi(){
       L("joincorner").classList.add("hidden");
     }
   }catch(e){ L("joincorner").classList.add("hidden"); }
+}
+
+// ---- "phone connected" confirmation ---------------------------------------
+// A guest who scans the Wi-Fi QR gets no feedback from their phone (no captive
+// sheet in pass-through mode), so confirm it here instead. Devices already on the
+// hotspot at load — the kiosk iPad, staff phones — are snapshotted and ignored;
+// only a NEW device counts as "someone just joined".
+let SEEN_DEVICES = null, joinOkTimer = null;
+async function pollGuests(){
+  try{
+    const j = await (await fetch("/api/hotspot/guests")).json();
+    const now = new Set(j.devices || []);
+    if (SEEN_DEVICES === null){ SEEN_DEVICES = now; return; }
+    const fresh = [...now].some(d => !SEEN_DEVICES.has(d));
+    SEEN_DEVICES = now;
+    if (fresh && !L("findcard").classList.contains("hidden")){
+      L("joinok").classList.remove("hidden");
+      clearTimeout(joinOkTimer);
+      joinOkTimer = setTimeout(() => L("joinok").classList.add("hidden"), 25000);
+    }
+  }catch(e){}
 }
 
 function onEvent(ev){
@@ -390,6 +419,7 @@ L("preview").onerror = () => setTimeout(kickPreview, 1500);
 L("preview").onload  = () => setTimeout(kickPreview, 1500);
 
 loadInfo(); loadWifi(); connectWS(); scheduleAttract();
+pollGuests(); setInterval(pollGuests, 3000);   // confirm hotspot joins on screen
 setInterval(loadInfo, 30000);
 setInterval(loadWifi, 30000);
 </script>

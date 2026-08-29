@@ -157,6 +157,30 @@ async def booth() -> HTMLResponse:
     return HTMLResponse(render_guest_page(_pending_view()), headers=_NO_CACHE)
 
 
+@app.get("/api/hotspot/guests")
+async def hotspot_guests() -> dict:
+    """Devices currently holding a DHCP lease on the guest hotspot.
+
+    The kiosk uses this to confirm a join on the BOOTH screen: since the hotspot
+    went pass-through there is no captive sheet, so a guest who scans the Wi-Fi QR
+    gets no feedback at all and doesn't know to scan the second QR.
+
+    Returns opaque per-device ids, not MACs or IPs — the kiosk only needs to spot a
+    device it hasn't seen before, and this page is open on the LAN.
+    """
+    import hashlib
+    devices = []
+    for f in Path("/var/lib/NetworkManager").glob("dnsmasq-*.leases"):
+        try:
+            for line in f.read_text().splitlines():
+                parts = line.split()
+                if len(parts) >= 3:
+                    devices.append(hashlib.sha1(parts[1].encode()).hexdigest()[:10])
+        except OSError:
+            continue
+    return {"count": len(devices), "devices": sorted(set(devices))}
+
+
 @app.get("/api/wifi/info")
 async def wifi_info() -> dict:
     """Guest hotspot details + scannable QR codes for the kiosk/guest pages.

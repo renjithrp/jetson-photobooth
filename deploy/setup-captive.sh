@@ -42,7 +42,17 @@ case "$ACTION" in
     # MODE=offline: DNS blackhole — no guest internet, but the find-your-photos page
     #   auto-opens on join. The in-portal selfie is unreliable on iOS.
     MODE="${2:-proxy}"
-    if [ "$MODE" = "offline" ]; then
+    if [ "$MODE" = "probe" ]; then
+      # Hijack ONLY the OS probe domains: guests keep real internet (every other
+      # name resolves normally) but the sign-in sheet still fires, which is the
+      # only thing that tells a guest their Wi-Fi QR scan worked. Flaky on iOS —
+      # a probe can escape via the working internet and the sheet never shows —
+      # so the kiosk also confirms joins on screen (/api/hotspot/guests).
+      echo "== probe mode: guests keep internet AND get a join confirmation =="
+      mkdir -p "$DNSMASQ_DIR"
+      cp "$APP/deploy/captive-probe-hijack.conf" "$DNSMASQ_DST"
+      rm -f "$DNSMASQ_DIR/captive-full-hijack.conf"
+    elif [ "$MODE" = "offline" ]; then
       echo "== offline mode: installing captive DNS hijack (no guest internet, auto-popup) =="
       mkdir -p "$DNSMASQ_DIR"
       cp "$APP/deploy/captive-dnsmasq.conf" "$DNSMASQ_DST"
