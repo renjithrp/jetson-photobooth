@@ -34,6 +34,12 @@
     background:#000; text-shadow:none; }
   #countdown.edge.scrim { background:none; }
   #countdown.blank .big { display:none; }   /* layer stays up; number hidden */
+  /* Blackout: the preview disappears behind a solid screen and the number fills it.
+     Nothing else on screen to look at, so eyes go to the number and then the lens. */
+  #countdown.blackout { background:#000; align-items:center; }
+  #countdown.blackout .big {
+    font-size:min(58vh, 44vw); line-height:1; width:auto; height:auto;
+    background:none; text-shadow:none; }
   .title { font-size:5vw; font-weight:800; text-shadow:0 3px 20px #000c; }
   .sub { font-size:2.4vw; opacity:.9; text-shadow:0 2px 10px #000c; }
   .scrim { background:radial-gradient(ellipse at center,#0006,#000a); }
@@ -194,6 +200,9 @@ function setPreview(){
 function show(name){
   curState = name;
   layers.forEach(n => L(n).classList.toggle("hidden", n !== name));
+  // The admin badge is the only other thing on a blacked-out screen, so it gets
+  // out of the way for the countdown and comes back with the next state.
+  if (name !== "countdown") L("ipbadge").style.visibility = "";
   // Hide the live preview while a shot is being processed/reviewed. The Sony
   // camera briefly streams a post-capture review image (and the MJPEG <img> holds
   // its last frame while the stream pauses), so without this the just-taken photo
@@ -265,6 +274,8 @@ function renderCountdown(value){
   el.classList.remove("blank");
   el.classList.toggle("edge", pos === "left" || pos === "right");
   el.classList.toggle("right", pos === "right");
+  el.classList.toggle("blackout", pos === "blackout");
+  L("ipbadge").style.visibility = (pos === "blackout") ? "hidden" : "";
   L("count").textContent = value;
   show("countdown");
 }

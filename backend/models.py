@@ -93,7 +93,9 @@ class TimerSettings(BaseModel):
     # Where the countdown number sits on the kiosk screen. Guests look AT the number,
     # so a centred one pulls their eyes off the lens and the photo catches everyone
     # staring sideways. "left" parks it at the screen edge, away from the camera.
-    countdown_position: Literal["left", "center", "right", "hidden"] = "left"
+    # "blackout" hides the preview entirely behind a black screen and shows only a
+    # very large number — the strongest possible "look up now" cue.
+    countdown_position: Literal["left", "center", "right", "blackout", "hidden"] = "left"
     # Show the number only for the final N seconds (0 = the whole countdown). Keeps
     # the screen calm early on and gives one late cue to look up.
     countdown_last_seconds: int = Field(0, ge=0, le=30)

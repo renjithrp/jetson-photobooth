@@ -52,8 +52,19 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
   sketch learns the press edge at boot rather than assuming one.
 - **Countdown display**: parked at the **left edge** on a black column by default —
   guests stare at the number, and a centred one pulled their eyes off the lens.
-  `timer.countdown_position` (left/right/center/hidden) and `timer.countdown_last_seconds`
-  (0 = whole countdown) are admin-controlled.
+  `timer.countdown_position` (left/right/center/**blackout**/hidden) and
+  `timer.countdown_last_seconds` (0 = whole countdown) are admin-controlled.
+  **Live setting: `blackout`** — the whole screen goes black with only a huge number,
+  the strongest "look up now" cue; it hides the live preview (and the admin badge)
+  for those seconds by design.
+  ⚠ A frontend deploy does NOT reload the kiosk browser — `deploy.sh` restarts the
+  backend services only, so Chromium keeps running the old HTML/CSS and the change
+  looks like it didn't apply. Reload it with:
+  `ssh pb@<booth> 'DISPLAY=:0 xdotool key --window $(DISPLAY=:0 xdotool search --onlyvisible --class chromium | head -1) ctrl+shift+r'`
+- **Debug overlays OFF for launch** (2026-08-29): `trigger.show_gesture_overlay`,
+  `show_gesture_stats` and `tune_mode` are all false. The overlay draws a yellow hand
+  skeleton and verdict text on the kiosk — invisible against a busy preview, glaring
+  on a blacked-out countdown. `tune_mode` must stay false or gestures never fire.
 - **Face grouping**: ON (CUDA). **AI background**: OFF. **Gaze correction**: OFF (measure-only scaffold).
 - **Printing** (CUPS): OFF.
 - **Cloud uploads**: S3/FTP OFF. **Google Drive CONNECTED** (2026-08-16; OAuth web client
