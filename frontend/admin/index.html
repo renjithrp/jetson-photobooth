@@ -311,6 +311,17 @@
       </div>
       <div class="grid2 mt-1">
         <div><label class="fld">Attract screen after idle (s)</label><input type="number" data-path="timer.attract_after_seconds"></div>
+        <div><label class="fld">Countdown position</label>
+          <select data-path="timer.countdown_position">
+            <option value="left">Left edge (keeps eyes near the lens)</option>
+            <option value="right">Right edge</option>
+            <option value="center">Centre (big)</option>
+            <option value="hidden">Hidden</option>
+          </select></div>
+        <div><label class="fld">Show counter only for last (s)</label>
+          <input type="number" data-path="timer.countdown_last_seconds" min="0" max="30">
+          <div style="font-size:.72rem;color:#94a3b8;margin-top:.25rem">0 = whole countdown</div>
+        </div>
       </div>
     </div>
     <div class="card"><h2><svg class="ic"><use href="#i-cam"/></svg> Camera</h2>

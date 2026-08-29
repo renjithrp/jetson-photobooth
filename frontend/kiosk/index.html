@@ -19,6 +19,21 @@
     transition:opacity .3s; }
   .hidden { opacity:0; pointer-events:none; }
   .big { font-size:18vw; font-weight:800; text-shadow:0 4px 30px #000a; }
+  /* Countdown parked at a screen edge: guests stare at the number, so a centred one
+     drags their eyes off the lens. The black column keeps it readable over the live
+     preview without covering the subject. */
+  /* .layer is a COLUMN flex, so the horizontal axis is align-items — justify-content
+     here just moves the number up and down and leaves it centred. */
+  #countdown.edge { align-items:flex-start; }
+  #countdown.edge.right { align-items:flex-end; }
+  #countdown.edge .big {
+    /* Bounded by the column's WIDTH as well as the screen height, so the digits
+       can't overflow the black strip on a narrow or portrait display. */
+    font-size:min(22vh, 15vw); line-height:1; width:22vw; height:100%;
+    display:flex; align-items:center; justify-content:center;
+    background:#000; text-shadow:none; }
+  #countdown.edge.scrim { background:none; }
+  #countdown.blank .big { display:none; }   /* layer stays up; number hidden */
   .title { font-size:5vw; font-weight:800; text-shadow:0 3px 20px #000c; }
   .sub { font-size:2.4vw; opacity:.9; text-shadow:0 2px 10px #000c; }
   .scrim { background:radial-gradient(ellipse at center,#0006,#000a); }
@@ -199,6 +214,8 @@ function scheduleAttract(){
   attractTimer = setTimeout(()=>show("attract"), attractAfter*1000);
 }
 
+let countdownPos = "left", countdownLast = 0;   // admin-controlled countdown placement
+
 async function loadInfo(){
   try{
     const r = await fetch("/api/system/info"); const j = await r.json();
@@ -211,6 +228,8 @@ async function loadInfo(){
     L("cambadge").style.display = unhealthy ? "block" : "none";
     const s = await (await fetch("/api/settings")).json();
     attractAfter = s.timer.attract_after_seconds || 60;
+    countdownPos = s.timer.countdown_position || "left";
+    countdownLast = +s.timer.countdown_last_seconds || 0;
     mirror = s.preview.mirror !== false;
     gestureOverlay = !!(s.trigger && s.trigger.show_gesture_overlay);
     if (!gestureOverlay) clearGesture();
@@ -229,6 +248,25 @@ async function loadInfo(){
     faceZone = (j.require_face && j.face_zone) ? j.face_zone : null;
     renderFaceZone();
   }catch(e){ console.warn(e); }
+}
+
+// Countdown placement + timing are admin-controlled (timer.countdown_position,
+// timer.countdown_last_seconds) — see the note in the CSS for why edge beats centre.
+function renderCountdown(value){
+  const pos = countdownPos, last = countdownLast;
+  const el = L("countdown");
+  if (pos === "hidden" || (last > 0 && +value > last)){
+    // Still leave the countdown layer up: it's what hides the attract screen and
+    // keeps the live preview visible while the timer runs.
+    show("countdown"); el.classList.add("blank");
+    L("count").textContent = "";
+    return;
+  }
+  el.classList.remove("blank");
+  el.classList.toggle("edge", pos === "left" || pos === "right");
+  el.classList.toggle("right", pos === "right");
+  L("count").textContent = value;
+  show("countdown");
 }
 
 async function loadWifi(){
@@ -275,7 +313,7 @@ async function pollGuests(){
 function onEvent(ev){
   switch(ev.type){
     case "idle": show("idle"); scheduleAttract(); break;
-    case "countdown": clearTimeout(attractTimer); show("countdown"); L("count").textContent = ev.value; break;
+    case "countdown": clearTimeout(attractTimer); renderCountdown(ev.value); break;
     case "capturing":
       show("capturing"); L("shotinfo").textContent = ev.total>1 ? `Shot 1 of ${ev.total}` : "Capturing…";
       flash(); break;

@@ -90,6 +90,13 @@ class TimerSettings(BaseModel):
     interval_seconds: float = Field(2.0, ge=0)      # gap between multi-shots
     review_seconds: int = Field(10, ge=0, le=300)   # how long the result/QR stays up
     attract_after_seconds: int = Field(60, ge=1)    # idle time before the attract screen
+    # Where the countdown number sits on the kiosk screen. Guests look AT the number,
+    # so a centred one pulls their eyes off the lens and the photo catches everyone
+    # staring sideways. "left" parks it at the screen edge, away from the camera.
+    countdown_position: Literal["left", "center", "right", "hidden"] = "left"
+    # Show the number only for the final N seconds (0 = the whole countdown). Keeps
+    # the screen calm early on and gives one late cue to look up.
+    countdown_last_seconds: int = Field(0, ge=0, le=30)
 
 
 class CameraSettings(BaseModel):
