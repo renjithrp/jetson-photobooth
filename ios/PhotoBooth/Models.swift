@@ -48,10 +48,25 @@ struct PendingResponse: Decodable {
 
 /// One capture session from GET /api/gallery (only real files on disk — deleted
 /// sessions never appear here).
-struct GallerySession: Decodable {
+struct GallerySession: Decodable, Identifiable {
     let session: String
     let mtime: Double
     let images: [String]
+
+    var id: String { session }
+    var date: Date { Date(timeIntervalSince1970: mtime) }
+
+    /// "Today at 3:42 PM" / "25 Aug 2026 at 3:42 PM". The booth runs one event at a
+    /// time, so the time of day is what actually tells two sessions apart.
+    var title: String { Self.titleFormatter.string(from: date) }
+
+    private static let titleFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        f.doesRelativeDateFormatting = true          // "Today", "Yesterday"
+        return f
+    }()
 }
 
 /// GET /api/network/status — booth-side connectivity (management Wi-Fi + hotspot).

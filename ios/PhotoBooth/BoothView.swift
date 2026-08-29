@@ -17,6 +17,7 @@ struct BoothView: View {
     @State private var recentThumb: String?
     @State private var liveReload = 0        // bump to force the MJPEG stream to reconnect
     @State private var focusing = false      // tap-to-focus reticle is showing
+    @State private var toast: ToastMessage?  // reconnect / capture feedback
 
     var body: some View {
         ZStack {
@@ -39,12 +40,31 @@ struct BoothView: View {
                 HStack(alignment: .top) {
                     statusPill
                     Spacer()
+                    // Grouped by how often it gets used: photos every session, booth
+                    // setup occasionally, recovery when something is wrong. A flat
+                    // five-item list made "Reconnect" as prominent as "Gallery".
                     Menu {
-                        Button { showGallery = true } label: { Label("Gallery", systemImage: "photo.on.rectangle") }
-                        Button { showTune = true } label: { Label("Gesture tuning", systemImage: "hand.raised") }
-                        Button { showAdmin = true } label: { Label("Admin", systemImage: "lock.shield") }
-                        Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
-                        Button { Task { await reconnect() } } label: { Label("Reconnect", systemImage: "arrow.clockwise") }
+                        Section {
+                            Button { showGallery = true } label: {
+                                Label("Photo gallery", systemImage: "photo.on.rectangle")
+                            }
+                        }
+                        Section("Booth setup") {
+                            Button { showTune = true } label: {
+                                Label("Gesture tuning", systemImage: "hand.raised")
+                            }
+                            Button { showAdmin = true } label: {
+                                Label("Booth admin", systemImage: "lock.shield")
+                            }
+                            Button { showSettings = true } label: {
+                                Label("App settings", systemImage: "gearshape")
+                            }
+                        }
+                        Section(booth.status == nil ? "Booth not responding" : "Connected") {
+                            Button { Task { await reconnect() } } label: {
+                                Label("Reconnect to booth", systemImage: "arrow.clockwise")
+                            }
+                        }
                     } label: { circleIcon("ellipsis") }
                 }
                 Spacer()
@@ -80,8 +100,12 @@ struct BoothView: View {
             }
         }
         .statusBarHidden(true)
+        .toast($toast)
         .fullScreenCover(isPresented: $showGuest, onDismiss: { liveReload += 1 }) { GuestView() }
-        .sheet(isPresented: $showGallery, onDismiss: { liveReload += 1; Task { await loadThumb() } }) { GalleryView() }
+        // Full screen, not .sheet: on iPad a sheet is a ~540pt form sheet, which
+        // wasted most of the display and squeezed the photo grid.
+        .fullScreenCover(isPresented: $showGallery,
+                         onDismiss: { liveReload += 1; Task { await loadThumb() } }) { GalleryView() }
         .sheet(isPresented: $showAdmin, onDismiss: { liveReload += 1 }) { AdminView() }
         .sheet(isPresented: $showSettings, onDismiss: { liveReload += 1 }) { SettingsSheet() }
         // half-height so the live view + detection overlay stay visible while tuning
@@ -156,7 +180,15 @@ struct BoothView: View {
         await loadThumb()
         triggering = false
     }
-    private func reconnect() async { await booth.connectAndRefresh() }
+    /// "Reconnect" used to be silent — you tapped it and nothing visibly happened,
+    /// so staff tapped it repeatedly. Say what the outcome was.
+    private func reconnect() async {
+        toast = ToastMessage(text: "Reconnecting…")
+        await booth.connectAndRefresh()
+        toast = booth.status == nil
+            ? ToastMessage(text: "Still can't reach the booth — check App settings.", kind: .error)
+            : ToastMessage(text: "Connected to the booth.", kind: .success)
+    }
     private func focusTap() async {
         guard !focusing else { return }
         withAnimation(.easeIn(duration: 0.1)) { focusing = true }

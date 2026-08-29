@@ -117,7 +117,8 @@ final class BoothClient: ObservableObject {
                           delegateQueue: nil)
     }()
 
-    private func probe(_ base: String) async -> Bool {
+    /// Also used by Settings to check a typed-in address before saving it.
+    func probe(_ base: String) async -> Bool {
         guard let u = URL(string: Self.normalized(base) + "/api/system/info") else { return false }
         guard let (_, resp) = try? await probeSession.data(from: u) else { return false }
         return (resp as? HTTPURLResponse)?.statusCode == 200
@@ -167,9 +168,43 @@ final class BoothClient: ObservableObject {
 
     // MARK: - gallery
     /// All photos on the booth, newest session first (real files only — no deleted).
+    /// Newest capture session first, or nil if the booth could not be reached.
+    ///
+    /// The nil matters: collapsing a failed request to an empty list made an
+    /// unreachable booth render as "No photos yet", which reads as "the booth took
+    /// no pictures" — the opposite of the truth, and it hid real outages.
+    func gallerySessions() async -> [GallerySession]? {
+        guard let sessions: [GallerySession] = await get("/api/gallery") else { return nil }
+        return sessions.sorted { $0.mtime > $1.mtime }
+    }
+
     func gallery() async -> [String] {
-        let sessions: [GallerySession] = await get("/api/gallery") ?? []
-        return sessions.sorted { $0.mtime > $1.mtime }.flatMap { $0.images }
+        (await gallerySessions() ?? []).flatMap { $0.images }
+    }
+
+    /// Permanently delete photos from the booth. Admin-only server-side, so this
+    /// fails with the session cookie missing — the caller checks isAdmin first.
+    func deletePhotos(_ photos: [String]) async -> OkResult {
+        (await post("/api/gallery/delete", body: ["photos": photos]) as OkResult?)
+            ?? OkResult(ok: false, error: "Couldn't reach the booth.")
+    }
+
+    /// Fetch photos full-res into a temp dir, keeping their .JPG names so AirDrop
+    /// and Files deliver real image files. `progress` reports 1-based completion.
+    func downloadToTemp(_ paths: [String],
+                        progress: @MainActor (Int, Int) -> Void = { _, _ in }) async -> [URL] {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("booth-share", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var files: [URL] = []
+        for (i, p) in paths.enumerated() {
+            progress(i + 1, paths.count)
+            guard let (data, resp) = try? await URLSession.shared.data(from: url(p)),
+                  (resp as? HTTPURLResponse)?.statusCode == 200 else { continue }
+            let f = dir.appendingPathComponent((p as NSString).lastPathComponent)
+            if (try? data.write(to: f)) != nil { files.append(f) }
+        }
+        return files
     }
 
     // MARK: - find my photos
@@ -303,4 +338,11 @@ private struct AnyEncodable: Encodable {
     let value: any Encodable
     init(_ v: any Encodable) { value = v }
     func encode(to encoder: Encoder) throws { try value.encode(to: encoder) }
+}
+
+/// Downloaded files awaiting the iOS share sheet. Shared by the gallery and the
+/// full-screen viewer so both present the same sheet.
+struct TempFiles: Identifiable {
+    let id = UUID()
+    let urls: [URL]
 }

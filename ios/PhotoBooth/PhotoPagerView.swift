@@ -10,6 +10,8 @@ struct PhotoPagerView: View {
     let photos: [String]
     @Binding var selected: Set<String>
     @State private var index: Int
+    @State private var busy = false
+    @State private var share: TempFiles?
 
     init(photos: [String], selected: Binding<Set<String>>, start: Int) {
         self.photos = photos
@@ -44,9 +46,40 @@ struct PhotoPagerView: View {
                 }
                 .padding()
                 Spacer()
+                // Act on the photo you are actually looking at. Without these the only
+                // way to send one photo was to close the viewer, find its tile again
+                // and select it.
+                HStack(spacing: 18) {
+                    Button { Task { await airdropCurrent() } } label: { chrome("square.and.arrow.up") }
+                    Button { downloadCurrent() } label: { chrome("square.and.arrow.down") }
+                }
+                .disabled(busy)
+                .padding(.bottom, 24)
+                .overlay(alignment: .top) {
+                    if busy { ProgressView().tint(.white).offset(y: -22) }
+                }
             }
         }
+        .sheet(item: $share) { s in ShareSheet(items: s.urls) }
         .idleReturn()
+    }
+
+    private var current: String? {
+        photos.indices.contains(index) ? photos[index] : nil
+    }
+
+    private func airdropCurrent() async {
+        guard let u = current else { return }
+        busy = true
+        let files = await booth.downloadToTemp([u])
+        busy = false
+        if !files.isEmpty { share = TempFiles(urls: files) }
+    }
+
+    private func downloadCurrent() {
+        guard let u = current else { return }
+        let q = u.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? u
+        UIApplication.shared.open(booth.url("/api/download?p=" + q))
     }
 
     private var isSelected: Bool {

@@ -81,6 +81,31 @@ booth's LAN IP on `http://<ip>:8000`). It's stored in `@AppStorage`.
   'UIKit'", "Cannot find type…"). That's expected: SourceKit lints against the macOS
   SDK with no project. In an **iOS app target in Xcode** everything resolves.
 
+## Gallery & options
+The gallery is presented with `fullScreenCover` (a `.sheet` on iPad is a ~540pt form
+sheet, which wasted most of the display) and lays photos out flat, newest first, three
+per row. It separates browsing from selecting: a tap opens the photo, `Select` — or a
+long-press on any tile — switches the whole tile into a selection target. Pull to refresh.
+`Delete` is admin-only and always confirms first; the booth-side endpoint also clears
+thumbnails and face-index entries so "find my photos" can't return a deleted file.
+Feedback (Drive/WhatsApp saved, AirDrop progress, reconnect result) surfaces as a
+self-dismissing toast (`Toast.swift`), shared with the booth screen.
+
+The ⋯ menu is grouped by how often each item is used, and `Settings` can test the booth
+address before saving it.
+
+`gallerySessions()` returns nil (not an empty list) when the booth can't be reached, so
+the gallery can tell "no photos" apart from "no booth" — collapsing the two made an
+outage read as an empty event. `downloadToTemp` is shared by the gallery's AirDrop and
+the viewer's per-photo actions.
+
+## App icon
+`PhotoBooth/Assets.xcassets/AppIcon.appiconset/` holds a single opaque 1024px icon
+(iOS derives the rest). It is generated from the booth artwork by
+`python3 tools/make_icon.py` at the repo root — edit that, not the PNG. The catalog is
+picked up automatically by `xcodegen generate` via `ASSETCATALOG_COMPILER_APPICON_NAME`
+in `project.yml`.
+
 ## Not yet included (easy follow-ups)
 - Multi-shot review / gallery browsing (the `/api/gallery` data is available).
 - Gesture-trigger status, disk/health tiles in Admin.
