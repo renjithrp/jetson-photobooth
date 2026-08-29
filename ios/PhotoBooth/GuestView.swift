@@ -223,6 +223,10 @@ struct QRStepsView: View {
     var onDone: () -> Void
     @State private var info: WifiInfo?
     @State private var page = 0
+    // Devices already on the hotspot when step 1 appears (this iPad, staff phones).
+    // Only a device that shows up AFTER that counts as "the guest just joined".
+    @State private var known: Set<String>?
+    @State private var autoAdvanced = false
 
     /// Direct zip-download URL for the chosen photos, on the guest-facing base
     /// (derived from find_url so it matches what phones on the hotspot can reach).
@@ -243,6 +247,12 @@ struct QRStepsView: View {
                                : (directURL != nil ? "Step 2 of 2 — Download your photos"
                                                    : "Step 2 of 2 — Open your photos"))
                     .font(.largeTitle.bold())
+
+                if page == 1 && autoAdvanced {
+                    Label("Connected to the booth Wi-Fi", systemImage: "checkmark.circle.fill")
+                        .font(.title3.bold()).foregroundStyle(.green)
+                        .transition(.opacity)
+                }
 
                 if page == 0 {
                     qrImageView(Self.decode(info.join_qr),
@@ -287,6 +297,28 @@ struct QRStepsView: View {
                 // arm the captive-popup download banner for the phone about to join
                 await booth.announceDownload(photos: downloadPhotos)
             }
+            await watchForJoin()
+        }
+    }
+
+    /// Move to step 2 by itself when a new phone appears on the hotspot.
+    ///
+    /// The guest has no way to tell the booth they joined — their phone shows no
+    /// confirmation — so they were left staring at step 1 wondering whether the scan
+    /// worked. The booth can see the DHCP lease, so it advances for them.
+    private func watchForJoin() async {
+        while !Task.isCancelled {
+            if let now = await booth.hotspotGuests().map(Set.init) {
+                if let before = known {
+                    if page == 0 && !now.subtracting(before).isEmpty {
+                        withAnimation { autoAdvanced = true; page = 1 }
+                    }
+                    known = now
+                } else {
+                    known = now                     // first poll = the baseline
+                }
+            }
+            try? await Task.sleep(for: .seconds(2))
         }
     }
 

@@ -17,8 +17,12 @@ final class IdleMonitor: ObservableObject {
     var onTimeout: (() -> Void)?
     private var task: Task<Void, Never>?
 
-    static let idleSeconds: Double = 10
-    static let countdownSeconds = 5
+    // 10s was far too eager: simply reading the screen without touching it triggered
+    // the "I'm still here" card, so guests met an interruption mid-task rather than
+    // a safety net for a walked-away kiosk. At 60s it only fires when the booth has
+    // genuinely been abandoned.
+    static let idleSeconds: Double = 60
+    static let countdownSeconds = 10
 
     func touch() {
         task?.cancel()
