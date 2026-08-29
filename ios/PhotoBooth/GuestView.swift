@@ -308,14 +308,20 @@ struct QRStepsView: View {
     /// confirmation — so they were left on step 1 unsure whether the scan worked.
     /// The booth watches Wi-Fi associations and advances for them.
     ///
-    /// Keyed on "associated within the last 25s", not on a device the booth hasn't
-    /// seen before: the first version compared against DHCP leases, which outlive
-    /// the connection, so a phone that had ever joined the booth reused its lease
-    /// and never counted as new — which is exactly why this didn't fire in testing.
+    /// Only a join that happened AFTER this screen appeared counts.
+    ///
+    /// "Associated within the last 25s" was too loose: a phone that joined shortly
+    /// before the guest reached this screen — very often the booth iPad itself,
+    /// which re-joins the hotspot every time the app launches — instantly skipped
+    /// step 1. Comparing the join's age against how long the screen has been open
+    /// makes "after I started showing this QR" the actual condition. (The booth now
+    /// also excludes the caller from its own view, so the iPad can't see itself.)
     private func watchForJoin() async {
+        let openedAt = Date()
         while !Task.isCancelled {
+            let onScreen = Date().timeIntervalSince(openedAt)
             if page == 0, let ages = await booth.hotspotGuestAges(),
-               ages.contains(where: { $0 <= 25 }) {
+               ages.contains(where: { Double($0) < onScreen }) {
                 withAnimation { autoAdvanced = true; page = 1 }
             }
             try? await Task.sleep(for: .seconds(2))

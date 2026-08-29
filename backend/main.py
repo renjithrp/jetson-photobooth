@@ -20,6 +20,7 @@ import secrets
 import time
 import urllib.parse
 import urllib.request
+import pathlib
 from pathlib import Path
 
 import qrcode
@@ -192,8 +193,27 @@ def _associated_macs(iface: str) -> list[str]:
     return [ln.split()[1] for ln in out.splitlines() if ln.startswith("Station ")]
 
 
+def _mac_for_ip(ip: str) -> str | None:
+    """Live IP -> MAC from the kernel's ARP table.
+
+    Reads /proc/net/arp, not the DHCP lease file: NetworkManager recreates the
+    lease file when the AP restarts, and it was found EMPTY while two devices were
+    associated — a lookup there silently returned nothing every time. The caller
+    has just made a request, so it is always in the ARP table.
+    """
+    try:
+        rows = pathlib.Path("/proc/net/arp").read_text().splitlines()[1:]
+    except OSError:
+        return None
+    for row in rows:
+        f = row.split()
+        if len(f) >= 4 and f[0] == ip and f[3] != "00:00:00:00:00:00":
+            return f[3]
+    return None
+
+
 @app.get("/api/hotspot/guests")
-async def hotspot_guests() -> dict:
+async def hotspot_guests(request: Request) -> dict:
     """Phones currently associated to the guest hotspot, and how long each has been.
 
     With no captive sheet, a guest scanning the Wi-Fi QR gets no confirmation at
@@ -209,6 +229,13 @@ async def hotspot_guests() -> dict:
     import hashlib
     iface = _ap_interface()
     macs = _associated_macs(iface) if iface else []
+    # Never report the caller to itself. The booth iPad is ON the hotspot and
+    # re-associates whenever the app launches, so it looked exactly like a guest
+    # arriving and made the iPad skip its own "join the Wi-Fi" step instantly.
+    if request.client:
+        me = _mac_for_ip(request.client.host)
+        if me:
+            macs = [m for m in macs if m != me]
     now = time.monotonic()
     if not _stations_bootstrapped:
         for m in macs:
