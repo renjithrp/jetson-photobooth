@@ -63,6 +63,11 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
   backend services only, so Chromium keeps running the old HTML/CSS and the change
   looks like it didn't apply. Reload it with:
   `ssh pb@<booth> 'DISPLAY=:0 xdotool key --window $(DISPLAY=:0 xdotool search --onlyvisible --class chromium | head -1) ctrl+shift+r'`
+- **Kiosk guest QR corner OFF** (2026-08-29, `general.show_guest_qr=false`): the
+  join-Wi-Fi + get-photos QR pair and the "phone connected" banner are hidden, since
+  guests are handled on the booth iPad. The kiosk is then just a live view, the
+  welcome line and the countdown. The face-zone dashed guide stays — it's drawn from
+  `trigger.require_face` and tells guests where to stand for a gesture to count.
 - **Debug overlays OFF for launch** (2026-08-29): `trigger.show_gesture_overlay`,
   `show_gesture_stats` and `tune_mode` are all false. The overlay draws a yellow hand
   skeleton and verdict text on the kiosk — invisible against a busy preview, glaring

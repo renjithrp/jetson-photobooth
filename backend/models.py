@@ -17,6 +17,10 @@ class GeneralSettings(BaseModel):
     thanks_message: str = "Thanks! Grab your photo 👇"
     language: str = "en"
     show_ip_overlay: bool = True          # show the admin URL in a screen corner
+    # Guest onboarding corner on the kiosk attract screen: the join-Wi-Fi + get-photos
+    # QR pair and the "phone connected" confirmation. Off when guests are handled on
+    # the booth iPad instead — the kiosk is then just a live view and a countdown.
+    show_guest_qr: bool = True
     admin_pin: str = "1234"               # gate for the admin dashboard
 
 

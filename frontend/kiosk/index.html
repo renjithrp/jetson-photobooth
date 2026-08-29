@@ -229,6 +229,7 @@ function scheduleAttract(){
 }
 
 let countdownPos = "left", countdownLast = 0, countdownBlackBg = false;  // admin-controlled
+let showGuestQR = true;   // guest QR corner + "phone connected" banner on the kiosk
 
 async function loadInfo(){
   try{
@@ -245,6 +246,11 @@ async function loadInfo(){
     countdownPos = s.timer.countdown_position || "left";
     countdownLast = +s.timer.countdown_last_seconds || 0;
     countdownBlackBg = !!s.timer.countdown_black_background;
+    showGuestQR = s.general.show_guest_qr !== false;
+    if (!showGuestQR){
+      L("joincorner").classList.add("hidden");
+      L("joinok").classList.add("hidden");
+    }
     mirror = s.preview.mirror !== false;
     gestureOverlay = !!(s.trigger && s.trigger.show_gesture_overlay);
     if (!gestureOverlay) clearGesture();
@@ -293,6 +299,7 @@ async function loadWifi(){
   // (It used to be one — a captive popup opened the photo page automatically. The
   // hotspot is pass-through now, so no popup fires and step 2 is a real step.)
   try{
+    if (!showGuestQR){ L("joincorner").classList.add("hidden"); return; }
     const w = await (await fetch("/api/wifi/info")).json();
     if (w.active && w.join_qr){
       L("joinqr").src = w.join_qr;
@@ -315,6 +322,7 @@ async function loadWifi(){
 // only a NEW device counts as "someone just joined".
 let joinOkTimer = null;
 async function pollGuests(){
+  if (!showGuestQR) return;          // nothing on screen to confirm onto
   try{
     const j = await (await fetch("/api/hotspot/guests")).json();
     // A phone that associated in the last ~25s. The booth times arrivals itself;
