@@ -7,40 +7,35 @@ extension Notification.Name {
     static let boothGoHome = Notification.Name("boothGoHome")
 }
 
-/// Kiosk idle timeout: after 10s without a touch/keystroke, shows a countdown card
-/// with a mini live view — "I'm still here" (or any touch) cancels; "Go to camera"
-/// (or the countdown ending) unwinds every open screen back to the booth camera.
+/// Kiosk idle timeout: after a long stretch with no touch, unwinds every open screen
+/// back to the booth camera, silently.
+///
+/// There used to be a countdown card ("Going back to the camera in 5… / I'm still
+/// here"). It is gone: it interrupted guests mid-task to tell them about something
+/// that hadn't happened yet, and the choice it offered was one nobody wanted to make.
+/// The return itself is kept — a guest's matched photos must not sit on a kiosk
+/// screen for the next person — but it now happens quietly, and only after long
+/// enough that nobody is still using the booth.
 @MainActor
 final class IdleMonitor: ObservableObject {
-    @Published var counting = false
-    @Published var secondsLeft = 5
     var onTimeout: (() -> Void)?
     private var task: Task<Void, Never>?
 
-    // 10s was far too eager: simply reading the screen without touching it triggered
-    // the "I'm still here" card, so guests met an interruption mid-task rather than
-    // a safety net for a walked-away kiosk. At 60s it only fires when the booth has
-    // genuinely been abandoned.
-    static let idleSeconds: Double = 60
-    static let countdownSeconds = 10
+    /// Was 10s + a 5s countdown. With no countdown there is no grace period, so the
+    /// wait absorbs it: reading a screen for 90s without a single touch means the
+    /// booth has been left.
+    static let idleSeconds: Double = 90
 
     func touch() {
         task?.cancel()
-        counting = false
         task = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.idleSeconds))
             guard !Task.isCancelled, let self else { return }
-            self.counting = true
-            for s in stride(from: Self.countdownSeconds, through: 1, by: -1) {
-                self.secondsLeft = s
-                try? await Task.sleep(for: .seconds(1))
-                if Task.isCancelled { return }
-            }
-            if self.counting { self.onTimeout?() }
+            self.onTimeout?()
         }
     }
 
-    func stop() { task?.cancel(); counting = false }
+    func stop() { task?.cancel() }
 }
 
 struct IdleReturn: ViewModifier {
@@ -48,7 +43,6 @@ struct IdleReturn: ViewModifier {
     /// its own idle timer, and the parent must not count down underneath it.
     var paused = false
     @StateObject private var idle = IdleMonitor()
-    @EnvironmentObject private var booth: BoothClient
     @Environment(\.dismiss) private var dismiss
 
     func body(content: Content) -> some View {
@@ -62,35 +56,12 @@ struct IdleReturn: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .boothGoHome)) { _ in
                 idle.stop(); dismiss()
             }
-            .overlay { if idle.counting && !paused { countdownCard } }
             .onChange(of: paused) { p in p ? idle.stop() : idle.touch() }
             .onAppear {
                 idle.onTimeout = { NotificationCenter.default.post(name: .boothGoHome, object: nil) }
                 if !paused { idle.touch() }
             }
             .onDisappear { idle.stop() }
-    }
-
-    private var countdownCard: some View {
-        VStack(spacing: 14) {
-            LiveView(url: booth.url("/api/preview/stream"))
-                .frame(width: 300, height: 190)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-            Text("Going back to the camera in \(idle.secondsLeft)…")
-                .font(.title3.bold()).multilineTextAlignment(.center)
-            HStack(spacing: 12) {
-                Button { idle.touch() } label: {
-                    Text("I'm still here").font(.headline).padding(.horizontal, 6)
-                }.buttonStyle(.bordered).controlSize(.large)
-                Button { NotificationCenter.default.post(name: .boothGoHome, object: nil) } label: {
-                    Label("Go to camera", systemImage: "camera.fill").font(.headline).padding(.horizontal, 6)
-                }.buttonStyle(.borderedProminent).controlSize(.large)
-            }
-        }
-        .padding(26)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24))
-        .shadow(radius: 20)
-        .transition(.opacity)
     }
 }
 
