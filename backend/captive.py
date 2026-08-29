@@ -113,6 +113,16 @@ app = FastAPI(title="AI Photo Booth (captive)", docs_url=None, redoc_url=None,
 _KIOSK_IPS = {ip.strip() for ip in os.environ.get("BOOTH_KIOSK_IPS", "").split(",") if ip.strip()}
 _APPLE_SUCCESS = "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"
 
+# BOOTH_CAPTIVE_MODE=silent answers every guest's connectivity probe with the
+# expected "success", so the phone treats the hotspot as an ordinary network:
+# no sign-in sheet at all, and no "no internet" warning — the same effect as the
+# guest tapping "Use Without Internet", which a portal cannot select for them.
+#
+# The cost is the automatic entry point: with no sheet, a guest who has photos
+# waiting is never shown them, so they must scan the kiosk QR instead. Default
+# stays "sheet" for that reason.
+_SILENT_CAPTIVE = os.environ.get("BOOTH_CAPTIVE_MODE", "sheet").strip().lower() == "silent"
+
 
 # iOS's Captive Network Assistant identifies itself here; Android's captive login
 # webview does the same with its own marker. Anything else is a real browser.
@@ -230,16 +240,23 @@ async def gateway(request: Request, full_path: str) -> Response:
     path = "/" + full_path
     if _is_guest_route(path):
         return await _proxy(request, path)
+    # /welcome is where the OS connectivity probes are redirected, so it is only
+    # ever loaded by the Wi-Fi sign-in window. Keying off the URL rather than the
+    # user agent is what makes this reliable: UA sniffing was tried first and the
+    # booth's own phones fell straight through it and got the camera app in a
+    # window that cannot open a camera.
+    if path == "/welcome":
+        log.info("captive window: %s", request.headers.get("user-agent", "?"))
+        return await _captive_landing()
     if path in ("/", "/booth"):
-        # The Wi-Fi sign-in window gets the Safari hand-off; a real browser (the
-        # guest having followed it, or scanned the QR) gets the actual app.
+        # A captive browser that reaches the app directly still gets the hand-off.
         if _is_captive_browser(request):
             return await _captive_landing()
         return await _guest_page()
     # The kiosk iPad must never see the captive sign-in sheet: answer its OS
     # connectivity probes with the expected "success" so iOS treats the hotspot
     # as a normal network. (Guests fall through to the redirect below.)
-    if request.client and request.client.host in _KIOSK_IPS:
+    if _SILENT_CAPTIVE or (request.client and request.client.host in _KIOSK_IPS):
         if "generate_204" in path:
             return Response(status_code=204)
         return HTMLResponse(_APPLE_SUCCESS)
@@ -253,5 +270,5 @@ async def gateway(request: Request, full_path: str) -> Response:
     # connectivitycheck.gstatic.com/generate_204, www.msftconnecttest.com, …) or a
     # random host the guest's phone hit — is a non-expected response, so the phone
     # decides it's behind a portal and opens /booth in its captive browser.
-    return RedirectResponse(f"http://{AP_IP}/booth", status_code=302,
+    return RedirectResponse(f"http://{AP_IP}/welcome", status_code=302,
                             headers=_NO_CACHE)

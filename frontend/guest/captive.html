@@ -15,8 +15,11 @@
   body { margin:0; padding:28px 20px 48px; min-height:100vh; text-align:center;
          background:var(--bg); color:var(--fg);
          font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-  .logo { font-size:44px; line-height:1; margin-bottom:6px; }
+  .tick { width:64px; height:64px; margin:6px auto 10px; border-radius:50%;
+          background:var(--ok); color:#06281c; font-size:34px; font-weight:800;
+          line-height:64px; }
   h1 { font-size:1.55rem; margin:6px 0 2px; }
+  p.net { color:var(--ok); font-size:.95rem; margin:0 0 18px; font-weight:600; }
   p.lead { color:var(--mut); font-size:1rem; margin:10px auto 22px; max-width:30rem; }
   .btn { display:block; width:100%; max-width:22rem; margin:0 auto;
          background:var(--accent); color:#fff; text-decoration:none;
@@ -35,8 +38,9 @@
 </style>
 </head>
 <body>
-  <div class="logo">📸</div>
-  <h1>You're connected!</h1>
+  <div class="tick">&#10003;</div>
+  <h1>Wi-Fi connected</h1>
+  <p class="net">You&rsquo;re on the photo booth network.</p>
 
   <!-- Photos already picked for this guest on the booth iPad. This path works
        right here in the sign-in window — it's just a download, no camera. -->
@@ -45,10 +49,9 @@
     <a class="btn white" href="__PENDING_URL__">Download my photos</a>
   </div>
 
-  <p class="lead">To find your photos with a selfie, open the booth in Safari.
-    This Wi-Fi sign-in window can&rsquo;t use the camera.</p>
+  <p class="lead">Open the photo booth in Safari to get your photos.</p>
 
-  <a class="btn" href="__SAFARI_URL__">Open in Safari</a>
+  <a class="btn" href="__SAFARI_URL__">Open photo booth</a>
 
   <p class="sep">If that button doesn&rsquo;t open Safari:</p>
   <div class="card">

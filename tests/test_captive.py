@@ -47,28 +47,35 @@ def test_blocked_api_routes_return_404_not_proxied():
         assert r.status_code == 404, f"{path} returned {r.status_code}, expected 404"
 
 
-def test_os_probes_redirect_to_guest_page():
+def test_os_probes_redirect_to_the_welcome_page():
     # Apple + Android connectivity probes must NOT get the expected response, so the
-    # phone decides it's behind a portal and opens /booth in its captive browser.
+    # phone decides it's behind a portal and opens the booth's captive browser — on
+    # /welcome, which is the camera-free page, NOT the app.
     for probe in ("/hotspot-detect.html", "/generate_204", "/ncsi.txt"):
         r = client.get(probe, follow_redirects=False)
         assert r.status_code == 302
-        assert r.headers["location"] == "http://192.168.50.1/booth"
+        assert r.headers["location"] == "http://192.168.50.1/welcome"
 
 
 # iOS reports this UA inside the Wi-Fi sign-in window.
 CNA_UA = {"user-agent": "CaptiveNetworkSupport-355.200.27 wispr"}
 
 
-def test_captive_window_gets_the_safari_handoff():
-    """The sign-in window can't open the camera, so it must not serve the selfie
-    app — it gets the hand-off page with an escape into Safari instead."""
-    r = client.get("/booth", headers=CNA_UA)
+def test_welcome_page_says_connected_and_has_no_camera():
+    """The sign-in window can't open a camera, so the selfie flow must not appear
+    there at all — it silently does nothing when tapped."""
+    r = client.get("/welcome")
     assert r.status_code == 200
-    assert "Open in Safari" in r.text
+    assert "Wi-Fi connected" in r.text
     assert "x-safari-http://" in r.text
     assert "Use Without Internet" in r.text        # written fallback steps
-    assert 'id="selfie"' not in r.text             # the camera input is NOT here
+    assert 'id="selfie"' not in r.text             # no camera input
+    assert "selfie" not in r.text.lower()          # and no mention of one
+
+
+def test_captive_window_hitting_the_app_still_gets_the_handoff():
+    r = client.get("/booth", headers=CNA_UA)
+    assert r.status_code == 200 and 'id="selfie"' not in r.text
 
 
 def test_real_browser_still_gets_the_full_guest_app():
