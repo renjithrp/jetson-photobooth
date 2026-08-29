@@ -42,7 +42,18 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
 
 ## Feature state
 - **Trigger**: gesture, `wave` (open palm swung side-to-side, 3 alternating swings ≈ waving
-  twice; ~20 fps sampling for wave, 6 fps for static poses). Arduino button wired.
+  twice; ~20 fps sampling for wave, 6 fps for static poses), plus a **wireless RF remote**
+  whose receiver is wired to an **ESP32-S3** (not an Arduino Nano — see
+  `native/arduino/booth_trigger_esp32s3/`) on `/dev/ttyACM0`.
+  **Button A toggles**: press to start, press again during the countdown to cancel.
+  ⚠ **Button B is NOT wired** — a scan of all 27 safe GPIOs saw zero transitions from it,
+  so its receiver channel needs a jumper before it can do anything.
+  The remote rests LOW on GPIO4 and pulses HIGH (opposite of a button-to-GND), so the
+  sketch learns the press edge at boot rather than assuming one.
+- **Countdown display**: parked at the **left edge** on a black column by default —
+  guests stare at the number, and a centred one pulled their eyes off the lens.
+  `timer.countdown_position` (left/right/center/hidden) and `timer.countdown_last_seconds`
+  (0 = whole countdown) are admin-controlled.
 - **Face grouping**: ON (CUDA). **AI background**: OFF. **Gaze correction**: OFF (measure-only scaffold).
 - **Printing** (CUPS): OFF.
 - **Cloud uploads**: S3/FTP OFF. **Google Drive CONNECTED** (2026-08-16; OAuth web client

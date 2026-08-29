@@ -170,6 +170,53 @@ def test_short_download_link_never_dead_ends(client):
     assert r.status_code == 302
 
 
+def test_button_press_during_countdown_cancels_it(admin, monkeypatch):
+    """The remote's one working button toggles: press to start, press again to stop."""
+    from backend import capture_service as cs
+    admin.put("/api/settings", json={
+        "camera": {"backend": "mock"}, "preview": {"source": "mock"},
+        "timer": {"countdown_seconds": 5, "num_shots": 1, "review_seconds": 0}})
+    monkeypatch.setattr(cs, "CLOCK_WAIT_S", 0)
+    root = config.captures_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    before = {d.name for d in root.iterdir() if d.is_dir()}
+
+    from backend.main import service
+    service.trigger_threadsafe("arduino")          # press 1: starts the countdown
+    time.sleep(1.5)
+    assert service.busy
+    service.trigger_threadsafe("arduino")          # press 2: calls it off
+    # the cancel path holds the session lock while it shows "cancelled", so give it
+    # longer than that message before expecting the booth to be free again
+    for _ in range(40):
+        if not service.busy:
+            break
+        time.sleep(0.25)
+    assert not service.busy
+    after = {d.name for d in root.iterdir() if d.is_dir()}
+    assert after == before                         # no photo, no leftover folder
+
+
+def test_only_the_button_cancels_a_running_countdown(monkeypatch):
+    """A pose held through the countdown must not cancel the photo it just asked for.
+
+    Unit-level on purpose: _dispatch spawns a task, and there's no running loop here.
+    """
+    from backend.main import service
+    started = []
+    monkeypatch.setattr(service, "_spawn", lambda coro: (coro.close(), started.append(1)))
+    service._counting = True
+    service._cancel.clear()
+    try:
+        service._dispatch("gesture")
+        assert not service._cancel.is_set() and started == [1]   # started, not cancelled
+        service._dispatch("arduino")
+        assert service._cancel.is_set() and started == [1]       # cancelled, not started
+    finally:
+        service._counting = False
+        service._cancel.clear()
+
+
 def test_health(client):
     j = client.get("/api/system/info").json()
     assert "version" in j and "disk" in j and "camera" in j

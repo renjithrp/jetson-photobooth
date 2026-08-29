@@ -36,6 +36,9 @@ class CaptureService:
         # Cleared at the start of every session so a stray press while idle can
         # never carry over and kill the *next* one.
         self._cancel = asyncio.Event()
+        # True only while the countdown is running — the one window where a session
+        # can still be called off.
+        self._counting = False
         self._loop: asyncio.AbstractEventLoop | None = None
         self.base_url = base_url_provider
         self.last_finals: list = []      # most recent session outputs (for reprint)
@@ -62,7 +65,20 @@ class CaptureService:
         """Callable from GPIO/gesture background threads."""
         if self._loop is None:
             return
-        self._loop.call_soon_threadsafe(lambda: self._spawn(self.run_session(source)))
+        self._loop.call_soon_threadsafe(lambda: self._dispatch(source))
+
+    def _dispatch(self, source: str) -> None:
+        """Start a session — or, for the button, call off the one counting down.
+
+        The booth's remote has one usable button (the second channel isn't wired to
+        a GPIO), so it toggles: press to start, press again during the countdown to
+        stop. Deliberately NOT applied to gestures — a pose held through the
+        countdown would keep re-triggering and cancel the photo the guest asked for.
+        """
+        if source == "arduino" and self._counting:
+            self._cancel.set()
+            return
+        self._spawn(self.run_session(source))
 
     def cancel_threadsafe(self, source: str = "manual") -> None:
         """Callable from trigger threads: abort a session that is still counting down.
@@ -118,6 +134,7 @@ class CaptureService:
 
         try:
             # countdown
+            self._counting = True
             for n in range(s.timer.countdown_seconds, 0, -1):
                 bus.publish({"type": "countdown", "value": n, "source": source})
                 if n == 1 and s.camera.backend == "sony" and s.preview.source == "sony_http":
@@ -133,6 +150,7 @@ class CaptureService:
                     pass
                 else:
                     raise SessionCancelled()
+            self._counting = False
             # Past this point the shutter is committed; cancelling a capture
             # mid-transfer would leave the camera and the session dir inconsistent.
 
@@ -155,6 +173,7 @@ class CaptureService:
                 shots = await loop.run_in_executor(
                     None, lambda: cam.capture(sess_dir, s.timer.num_shots, on_shot))
         except BaseException:
+            self._counting = False
             # A failed (or cancelled) capture must not leave an empty session folder
             # cluttering the gallery ordering and pruning.
             try:

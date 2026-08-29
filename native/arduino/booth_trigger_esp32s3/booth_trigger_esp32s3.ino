@@ -44,12 +44,18 @@ const unsigned long DEBOUNCE_MS = 40;   // local edge filter; the host debounces
   #define HAVE_SEPARATE_UART 1
 #endif
 
-// Seeded from the real pin state in setup(), NOT from HIGH. Opening the serial
-// port asserts DTR/RTS, which on these boards is wired to EN and reboots the chip —
-// so if a button reads LOW at boot (held, or the pin is tied low), assuming HIGH
-// invents a falling edge and the booth takes a phantom photo every time the backend
-// reconnects. Observed doing exactly that before this was seeded properly.
-int lastCap, lastPrn;
+// Both the resting level AND which edge means "pressed" are learned at boot, not
+// assumed. A button wired to GND rests HIGH and pulses LOW; the RF remote fitted to
+// this booth does the opposite — GPIO4 rests LOW and pulses HIGH — so a hardcoded
+// falling edge fired on RELEASE instead of press. Whatever the pin reads at rest is
+// "not pressed"; the other level is.
+//
+// Seeding from the real pin also matters because opening the serial port asserts
+// DTR/RTS, which is wired to EN and reboots the chip: assuming HIGH invented a
+// falling edge and the booth took a phantom photo every time the backend
+// reconnected. Observed doing exactly that.
+int lastCap, lastPrn;          // level at the previous poll
+int activeCap, activePrn;      // the level that means "pressed"
 unsigned long tCap = 0, tPrn = 0;
 
 static void emit(const char *msg) {
@@ -73,14 +79,17 @@ void setup() {
   delay(200);                           // let the USB CDC host side attach first
   lastCap = digitalRead(PIN_CAPTURE);   // adopt the resting state; see above
   lastPrn = digitalRead(PIN_PRINT);
+  activeCap = !lastCap;                 // ...and infer which edge is a press
+  activePrn = !lastPrn;
   emit("READY");
 }
 
-static void handleButton(int pin, int &last, unsigned long &t, const char *msg) {
+static void handleButton(int pin, int &last, int active, unsigned long &t,
+                         const char *msg) {
   int v = digitalRead(pin);
   if (v != last && (millis() - t) > DEBOUNCE_MS) {
     t = millis();
-    if (v == LOW) emit(msg);            // fire on press (LOW = pressed, pull-up)
+    if (v == active) emit(msg);         // fire on press, whichever level that is
     last = v;
   }
 }
@@ -95,8 +104,8 @@ static void handleHostCommand(Stream &in) {
 }
 
 void loop() {
-  handleButton(PIN_CAPTURE, lastCap, tCap, "TRIG");
-  handleButton(PIN_PRINT,   lastPrn, tPrn, "PRINT");
+  handleButton(PIN_CAPTURE, lastCap, activeCap, tCap, "TRIG");
+  handleButton(PIN_PRINT,   lastPrn, activePrn, tPrn, "PRINT");
   handleHostCommand(Serial);
 #ifdef HAVE_SEPARATE_UART
   handleHostCommand(Serial0);
