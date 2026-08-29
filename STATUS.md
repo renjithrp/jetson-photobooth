@@ -54,9 +54,11 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
   guests stare at the number, and a centred one pulled their eyes off the lens.
   `timer.countdown_position` (left/right/center/**blackout**/hidden) and
   `timer.countdown_last_seconds` (0 = whole countdown) are admin-controlled.
-  **Live setting: `blackout`** — the whole screen goes black with only a huge number,
-  the strongest "look up now" cue; it hides the live preview (and the admin badge)
-  for those seconds by design.
+  `timer.countdown_black_background` blacks the screen for ANY position, so
+  left/right become a full black screen with the number at that edge (and the number
+  grows, since there's no preview left to keep clear). The `blackout` position is
+  that plus centring. All of these hide the live preview and the admin badge for the
+  duration, by design — there is nothing to look at but the number.
   ⚠ A frontend deploy does NOT reload the kiosk browser — `deploy.sh` restarts the
   backend services only, so Chromium keeps running the old HTML/CSS and the change
   looks like it didn't apply. Reload it with:

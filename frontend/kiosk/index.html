@@ -36,6 +36,11 @@
   #countdown.blank .big { display:none; }   /* layer stays up; number hidden */
   /* Blackout: the preview disappears behind a solid screen and the number fills it.
      Nothing else on screen to look at, so eyes go to the number and then the lens. */
+  /* Blacks the whole screen behind the number, for any position. */
+  #countdown.blackbg { background:#000; }
+  /* With nothing behind it to keep clear, an edge number can be much larger — the
+     column only had to be narrow to leave room for the live preview. */
+  #countdown.edge.blackbg .big { width:34vw; font-size:min(44vh, 26vw); }
   #countdown.blackout { background:#000; align-items:center; }
   #countdown.blackout .big {
     font-size:min(58vh, 44vw); line-height:1; width:auto; height:auto;
@@ -223,7 +228,7 @@ function scheduleAttract(){
   attractTimer = setTimeout(()=>show("attract"), attractAfter*1000);
 }
 
-let countdownPos = "left", countdownLast = 0;   // admin-controlled countdown placement
+let countdownPos = "left", countdownLast = 0, countdownBlackBg = false;  // admin-controlled
 
 async function loadInfo(){
   try{
@@ -239,6 +244,7 @@ async function loadInfo(){
     attractAfter = s.timer.attract_after_seconds || 60;
     countdownPos = s.timer.countdown_position || "left";
     countdownLast = +s.timer.countdown_last_seconds || 0;
+    countdownBlackBg = !!s.timer.countdown_black_background;
     mirror = s.preview.mirror !== false;
     gestureOverlay = !!(s.trigger && s.trigger.show_gesture_overlay);
     if (!gestureOverlay) clearGesture();
@@ -264,6 +270,7 @@ async function loadInfo(){
 function renderCountdown(value){
   const pos = countdownPos, last = countdownLast;
   const el = L("countdown");
+  const dark = countdownBlackBg || pos === "blackout";
   if (pos === "hidden" || (last > 0 && +value > last)){
     // Still leave the countdown layer up: it's what hides the attract screen and
     // keeps the live preview visible while the timer runs.
@@ -275,7 +282,8 @@ function renderCountdown(value){
   el.classList.toggle("edge", pos === "left" || pos === "right");
   el.classList.toggle("right", pos === "right");
   el.classList.toggle("blackout", pos === "blackout");
-  L("ipbadge").style.visibility = (pos === "blackout") ? "hidden" : "";
+  el.classList.toggle("blackbg", dark);
+  L("ipbadge").style.visibility = dark ? "hidden" : "";
   L("count").textContent = value;
   show("countdown");
 }

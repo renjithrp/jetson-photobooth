@@ -99,6 +99,12 @@ class TimerSettings(BaseModel):
     # Show the number only for the final N seconds (0 = the whole countdown). Keeps
     # the screen calm early on and gives one late cue to look up.
     countdown_last_seconds: int = Field(0, ge=0, le=30)
+    # Black out the rest of the screen during the countdown, whatever the position.
+    # With "left"/"right" that turns the edge column into a full black screen with the
+    # number at the edge; the live preview (and the admin badge) go away for those
+    # seconds so there is nothing to look at but the number. Independent of the
+    # "blackout" position, which is this plus centring.
+    countdown_black_background: bool = False
 
 
 class CameraSettings(BaseModel):
