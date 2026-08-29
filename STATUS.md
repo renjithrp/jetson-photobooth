@@ -98,12 +98,25 @@ XcodeGen spec; regenerate with `xcodegen generate`, build via `xcodebuild` — s
 bundle `com.renjithrp.photobooth`. (An early iPhone install from testing can be deleted
 off the phone like any app.)
 - Full-screen camera-style booth screen: live view (WKWebView MJPEG, auto-reconnects after
-  sheets/foreground), round shutter, ⋯ menu (Gallery / Admin / Settings / Reconnect),
-  recent-photo gallery button, big "Get your photos" guest CTA.
+  sheets/foreground), round shutter, ⋯ menu (grouped: Photo gallery · Booth setup ·
+  Reconnect, which now reports whether it worked), recent-photo gallery button, big
+  "Get your photos" guest CTA.
 - Guest flow: selfie → matched photos → WhatsApp (dedicated big-keypad number screen) /
   Drive opt-in / direct-download QR (zip link QR generated on-device — no second selfie).
   QR self-download steps: Wi-Fi join QR then photo QR, with instructions.
-- Gallery: all real photos, selfie filter, tile + full-photo view with pinch/double-tap zoom.
+- Gallery: **full-screen** (not an iPad form sheet), a flat newest-first grid **3 per
+  row** with no date/session headers. Browsing and selecting are separate modes (tap
+  opens, "Select" or long-press selects the whole tile) with a large 46pt selection
+  badge; Select all; pull-to-refresh; selfie filter; tile + full-photo view with
+  pinch/double-tap zoom; AirDrop shows per-photo progress; results report as
+  self-dismissing toasts rather than grey footnote text. **Delete** removes the
+  selected photos (admin-only, behind a confirmation alert) via
+  `POST /api/gallery/delete`, which also drops their thumbnails and face-index
+  entries and removes a session emptied by the delete. An unreachable booth says so
+  (with the address and a Try again) instead of rendering as "No photos yet"; photos
+  captured while the gallery is open are announced as a "N new photos — tap to show"
+  bar rather than spliced in under the reader's finger; the full-screen viewer can
+  AirDrop/download the photo on screen without going back to the tiles.
 - Kiosk behaviors: auto-joins the booth hotspot on open (NEHotspotConfiguration), screen
   never auto-locks, 10 s idle → cancellable 5 s countdown (with mini live view + "Go to
   camera") unwinds to the booth screen.
@@ -112,6 +125,14 @@ off the phone like any app.)
   the booth (fail-fast HTTP timeouts — a booth restart can't wedge it), and the live view
   reconnects itself via a load-event heartbeat (~10 s after a stream drop) instead of
   freezing while the status pill stays green.
+
+## Key changes (2026-08-28 session)
+App icon added (six-blade aperture, booth teal): one geometry source in `tools/make_icon.py`
+emits `frontend/assets/icon.svg` + favicon/PWA/apple-touch rasters and the iPad
+`AppIcon.appiconset` (opaque 1024). `/favicon.ico` now serves a real file; all four web
+pages link the icon, and the captive proxy allowlist gained `/assets/` (static frontend
+files only) so the guest page can load it. · iPad gallery + ⋯ menu usability pass (see the
+iPad app section above), verified in the iPad Air simulator against a mock booth.
 
 ## Key changes (2026-08-16 session)
 Google Drive connected (localhost-redirect OAuth via SSH tunnel) · WhatsApp send queue
