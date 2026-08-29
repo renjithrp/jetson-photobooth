@@ -35,6 +35,8 @@
           border-radius:9px; padding:4px 10px; font-weight:700;
           font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
   .sep { color:var(--mut); font-size:.9rem; margin:26px 0 12px; }
+  /* The name only resolves via the booth's DNS; a phone on encrypted DNS needs the IP. */
+  .alt { color:var(--mut); font-size:.85rem; }
 </style>
 </head>
 <body>
@@ -58,7 +60,8 @@
     <ol>
       <li>Tap <b>Cancel</b> (top-left), then <b>Use Without Internet</b>.</li>
       <li>Open the <b>Safari</b> app.</li>
-      <li>Go to <span class="addr">__BOOTH_HOST__</span></li>
+      <li>Go to <span class="addr">__BOOTH_HOST__</span><br>
+        <span class="alt">or <span class="addr">__BOOTH_IP__</span> if that doesn&rsquo;t load</span></li>
     </ol>
   </div>
 </body>

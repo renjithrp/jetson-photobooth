@@ -36,6 +36,10 @@ log = logging.getLogger("captive")
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
 BACKEND_ORIGIN = os.environ.get("BOOTH_BACKEND", "https://127.0.0.1:8000")
 AP_IP = os.environ.get("BOOTH_AP_IP", "192.168.50.1")
+# Friendly name resolved for guests by the hotspot's dnsmasq (deploy/booth-hostname.conf).
+# Shown to humans; the IP stays the fallback for phones on encrypted DNS, which
+# bypass the booth's resolver entirely and can never resolve it.
+AP_HOST = os.environ.get("BOOTH_AP_HOST", "photos.internal")
 
 # Routes handed through to the real backend over loopback TLS.
 #
@@ -175,8 +179,11 @@ async def _captive_landing() -> HTMLResponse:
     text = (text.replace("__PENDING_DISPLAY__", disp)
                 .replace("__PENDING_TITLE__", title)
                 .replace("__PENDING_URL__", url)
+                # The Safari hand-off uses the IP on purpose: it must work even
+                # when the guest's phone can't resolve the booth's private name.
                 .replace("__SAFARI_URL__", f"x-safari-http://{AP_IP}/booth")
-                .replace("__BOOTH_HOST__", AP_IP))
+                .replace("__BOOTH_HOST__", AP_HOST)
+                .replace("__BOOTH_IP__", AP_IP))
     return HTMLResponse(text, headers=_NO_CACHE)
 
 
