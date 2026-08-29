@@ -97,6 +97,23 @@ class FaceIndex:
             self._cmat = None
             self._save()
 
+    def remove_photos(self, urls: list[str]) -> None:
+        """Drop specific photos' faces, and any cluster left with none — the
+        per-photo counterpart of remove_session(). Without this, "find my photos"
+        keeps matching deleted files and the guest gets 404 thumbnails."""
+        drop = set(urls)
+        if not drop:
+            return
+        with self._lock:
+            before = len(self.faces)
+            self.faces = [f for f in self.faces if f.get("url") not in drop]
+            if len(self.faces) == before:
+                return
+            live = {f["cluster"] for f in self.faces}
+            self.clusters = [c for c in self.clusters if c["id"] in live]
+            self._cmat = None
+            self._save()
+
     def groups(self) -> list[dict]:
         with self._lock:
             by: dict[int, list[str]] = {}

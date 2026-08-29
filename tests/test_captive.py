@@ -16,6 +16,7 @@ GUEST_ROUTES = [
     "/api/download", "/api/download/pending",
     "/captures/session_x/1.jpg", "/thumbs/session_x/1.jpg",
     "/s/session_x",
+    "/assets/icon.svg", "/assets/favicon.ico",   # static frontend files (page icons)
 ]
 BLOCKED_ROUTES = [
     "/api/login", "/api/gallery", "/api/settings", "/api/capture",
@@ -53,6 +54,28 @@ def test_os_probes_redirect_to_guest_page():
         r = client.get(probe, follow_redirects=False)
         assert r.status_code == 302
         assert r.headers["location"] == "http://192.168.50.1/booth"
+
+
+# iOS reports this UA inside the Wi-Fi sign-in window.
+CNA_UA = {"user-agent": "CaptiveNetworkSupport-355.200.27 wispr"}
+
+
+def test_captive_window_gets_the_safari_handoff():
+    """The sign-in window can't open the camera, so it must not serve the selfie
+    app — it gets the hand-off page with an escape into Safari instead."""
+    r = client.get("/booth", headers=CNA_UA)
+    assert r.status_code == 200
+    assert "Open in Safari" in r.text
+    assert "x-safari-http://" in r.text
+    assert "Use Without Internet" in r.text        # written fallback steps
+    assert 'id="selfie"' not in r.text             # the camera input is NOT here
+
+
+def test_real_browser_still_gets_the_full_guest_app():
+    r = client.get("/booth", headers={"user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0) Safari"})
+    assert r.status_code == 200
+    assert 'id="selfie"' in r.text                 # camera flow intact in Safari
+    assert "Open in Safari" not in r.text
 
 
 def test_guest_page_served_over_http():

@@ -126,7 +126,8 @@ app = FastAPI(title="PhotoBooth Pro", version="1.0.0", lifespan=lifespan)
 app.mount("/assets", StaticFiles(directory=str(FRONTEND / "assets")), name="assets")
 service = CaptureService(base_url)
 triggers = TriggerManager(on_trigger=service.trigger_threadsafe,
-                          on_print=service.print_last_threadsafe)
+                          on_print=service.print_last_threadsafe,
+                          on_cancel=service.cancel_threadsafe)
 watchdog = CameraWatchdog(hub, config, lambda: service.busy)
 
 
@@ -175,9 +176,12 @@ async def wifi_info() -> dict:
     return out
 
 
-@app.get("/favicon.ico")
-async def favicon() -> Response:
-    return Response(status_code=204)
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> FileResponse:
+    """Browsers request this by convention even though every page also carries an
+    explicit <link rel="icon">."""
+    return FileResponse(FRONTEND / "assets" / "favicon.ico",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 # ---- session-path safety --------------------------------------------------
@@ -390,6 +394,17 @@ async def manual_capture() -> dict:
     task = asyncio.create_task(service.run_session("manual"))
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
+    return {"ok": True}
+
+
+@app.post("/api/capture/cancel")
+async def cancel_capture() -> dict:
+    """Abort a session that is still counting down (the remote's stop button, and
+    the same action for the kiosk/iPad). Open like /api/capture: a guest who can
+    start a countdown must be able to stop it."""
+    if not service.busy:
+        return {"ok": False, "reason": "idle"}
+    service.cancel_threadsafe("api")
     return {"ok": True}
 
 
@@ -833,6 +848,47 @@ async def delete_session(session: str, _: None = Depends(require_auth)) -> dict:
         raise HTTPException(404, "not found")
     shutil.rmtree(d, ignore_errors=True)
     return {"ok": True}
+
+
+@app.post("/api/gallery/delete")
+async def delete_photos(body: dict, _: None = Depends(require_auth)) -> dict:
+    """Delete individual photos — the iPad gallery's selection.
+
+    Session-level delete already exists above; this is the per-photo case. Paths
+    are resolved with share.resolve_photos, so nothing outside the captures tree
+    can be targeted however the request is crafted.
+    """
+    wanted = [str(u) for u in (body.get("photos") or [])]
+    files = share.resolve_photos(wanted)
+    if not files:
+        raise HTTPException(400, "no photos")
+
+    root = config.captures_dir().resolve()
+    thumbs = share.thumbs_dir()
+    sessions: set[str] = set()
+    removed = 0
+    for f in files:
+        rel = f.relative_to(root)
+        sessions.add(rel.parts[0])
+        try:
+            f.unlink()
+        except OSError:
+            continue
+        removed += 1
+        try:                                  # the cached thumbnail goes with it
+            (thumbs / rel).with_suffix(".jpg").unlink()
+        except OSError:
+            pass
+
+    face_index.index.remove_photos(wanted)
+    for name in sessions:                     # a session emptied by this shouldn't linger
+        d = root / name
+        try:
+            if d.is_dir() and not any(d.iterdir()):
+                d.rmdir()
+        except OSError:
+            pass
+    return {"ok": True, "deleted": removed}
 
 
 # ---- destination tests ----------------------------------------------------

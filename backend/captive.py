@@ -48,7 +48,10 @@ AP_IP = os.environ.get("BOOTH_AP_IP", "192.168.50.1")
 # else, so this is an explicit allowlist. Static photo trees (/captures, /thumbs)
 # and share pages (/s) are prefixes; the guest API routes are matched exactly so a
 # path like "/api/faces/find/../../login" can't sneak through.
-_PROXY_PREFIXES = ("/captures/", "/thumbs/", "/s/")
+# "/assets/" is the static frontend mount (icons, tailwind.js) -- inert files,
+# GET-only, and strictly less sensitive than the guest photos already proxied
+# below. The guest page needs it for its icons.
+_PROXY_PREFIXES = ("/captures/", "/thumbs/", "/s/", "/assets/")
 _PROXY_EXACT = frozenset({
     "/api/wifi/info",        # hotspot details + QR (also the origin-probe route)
     "/api/faces/find",       # find my photos by selfie
@@ -111,26 +114,73 @@ _KIOSK_IPS = {ip.strip() for ip in os.environ.get("BOOTH_KIOSK_IPS", "").split("
 _APPLE_SUCCESS = "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"
 
 
+# iOS's Captive Network Assistant identifies itself here; Android's captive login
+# webview does the same with its own marker. Anything else is a real browser.
+_CNA_MARKERS = ("captivenetworksupport", "captiveportallogin")
+
+
+def _is_captive_browser(request: Request) -> bool:
+    ua = request.headers.get("user-agent", "").lower()
+    return any(m in ua for m in _CNA_MARKERS)
+
+
+async def _pending() -> dict:
+    """What the booth has queued for this guest, or {} if the lookup fails.
+
+    Fresh client on purpose: the shared pool's keep-alive sockets go stale when the
+    backend restarts, and a silently-failed lookup here served the popup WITHOUT the
+    download button (observed live). One tiny loopback request per load — guests join
+    rarely, correctness wins.
+    """
+    try:
+        async with httpx.AsyncClient(base_url=BACKEND_ORIGIN, verify=False,
+                                     timeout=2.0) as c:
+            return (await c.get("/api/download/pending")).json()
+    except Exception:
+        log.warning("pending-download lookup failed")
+        return {}
+
+
+async def _captive_landing() -> HTMLResponse:
+    """Hand the guest off to Safari.
+
+    The sign-in window cannot open the camera, so the selfie ("find my photos")
+    flow is dead in here — it silently does nothing when tapped. Rather than serve
+    the full app and let guests hit that wall, this page explains the situation and
+    offers a one-tap escape into a real browser, where the camera works.
+
+    A download the booth already queued for this guest still works right here (it's
+    just a link), so that keeps its button and is NOT pushed out to Safari.
+    """
+    import html as html_lib
+    text = (FRONTEND / "guest" / "captive.html").read_text()
+    j = await _pending()
+    disp, title, url = "none", "", "#"
+    if j.get("pending"):
+        disp = "block"
+        title = f"Your {j['count']} photo{'s' if j['count'] > 1 else ''} are ready"
+        url = html_lib.escape(j["download"], quote=True)
+    # x-safari-http:// is the scheme that breaks out of the captive window into
+    # Safari on iOS. If the OS doesn't honour it the page's written steps cover it.
+    text = (text.replace("__PENDING_DISPLAY__", disp)
+                .replace("__PENDING_TITLE__", title)
+                .replace("__PENDING_URL__", url)
+                .replace("__SAFARI_URL__", f"x-safari-http://{AP_IP}/booth")
+                .replace("__BOOTH_HOST__", AP_IP))
+    return HTMLResponse(text, headers=_NO_CACHE)
+
+
 async def _guest_page() -> HTMLResponse:
     """Serve the guest page with the ready-to-download banner rendered SERVER-SIDE
     (captive mini-browsers don't reliably run JavaScript — observed live on iOS)."""
     import html as html_lib
     text = (FRONTEND / "guest" / "index.html").read_text()
     disp, title, url = "none", "", "#"
-    try:
-        # Fresh client on purpose: the shared pool's keep-alive sockets go stale when
-        # the backend restarts, and a silently-failed lookup here served the popup
-        # WITHOUT the download button (observed live). One tiny loopback request per
-        # /booth load — guests join rarely, correctness wins.
-        async with httpx.AsyncClient(base_url=BACKEND_ORIGIN, verify=False,
-                                     timeout=2.0) as c:
-            j = (await c.get("/api/download/pending")).json()
-        if j.get("pending"):
-            disp = "block"
-            title = f"Your {j['count']} photo{'s' if j['count'] > 1 else ''} are ready"
-            url = html_lib.escape(j["download"], quote=True)
-    except Exception:
-        log.warning("pending-download lookup failed; serving page without banner")
+    j = await _pending()
+    if j.get("pending"):
+        disp = "block"
+        title = f"Your {j['count']} photo{'s' if j['count'] > 1 else ''} are ready"
+        url = html_lib.escape(j["download"], quote=True)
     text = (text.replace("__PENDING_DISPLAY__", disp)
                 .replace("__PENDING_TITLE__", title)
                 .replace("__PENDING_URL__", url))
@@ -181,6 +231,10 @@ async def gateway(request: Request, full_path: str) -> Response:
     if _is_guest_route(path):
         return await _proxy(request, path)
     if path in ("/", "/booth"):
+        # The Wi-Fi sign-in window gets the Safari hand-off; a real browser (the
+        # guest having followed it, or scanned the QR) gets the actual app.
+        if _is_captive_browser(request):
+            return await _captive_landing()
         return await _guest_page()
     # The kiosk iPad must never see the captive sign-in sheet: answer its OS
     # connectivity probes with the expected "success" so iOS treats the hotspot

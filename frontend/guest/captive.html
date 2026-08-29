@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Photo Booth</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<!-- Deliberately JS-free and self-contained: this is rendered inside the phone's
+     Wi-Fi sign-in window (iOS Captive Network Assistant), which does not reliably
+     run JavaScript and cannot open the camera. -->
+<style>
+  :root { --bg:#0d0f14; --card:#171a21; --fg:#f1f3f7; --mut:#9aa3b2;
+          --accent:#5b8cff; --ok:#34d399; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; padding:28px 20px 48px; min-height:100vh; text-align:center;
+         background:var(--bg); color:var(--fg);
+         font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .logo { font-size:44px; line-height:1; margin-bottom:6px; }
+  h1 { font-size:1.55rem; margin:6px 0 2px; }
+  p.lead { color:var(--mut); font-size:1rem; margin:10px auto 22px; max-width:30rem; }
+  .btn { display:block; width:100%; max-width:22rem; margin:0 auto;
+         background:var(--accent); color:#fff; text-decoration:none;
+         border-radius:14px; padding:17px 20px; font-size:1.12rem; font-weight:700; }
+  .btn.white { background:#fff; color:#0d9488; }
+  .card { background:var(--card); border-radius:16px; padding:20px 18px;
+          margin:0 auto 22px; max-width:30rem; }
+  .card h2 { font-size:1.15rem; margin:0 0 10px; }
+  ol { text-align:left; color:var(--fg); margin:14px auto 0; max-width:26rem;
+       padding-left:22px; line-height:1.75; font-size:1rem; }
+  ol b { color:#fff; }
+  .addr { display:inline-block; background:#0b0d12; border:1px solid #2a3040;
+          border-radius:9px; padding:4px 10px; font-weight:700;
+          font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .sep { color:var(--mut); font-size:.9rem; margin:26px 0 12px; }
+</style>
+</head>
+<body>
+  <div class="logo">📸</div>
+  <h1>You're connected!</h1>
+
+  <!-- Photos already picked for this guest on the booth iPad. This path works
+       right here in the sign-in window — it's just a download, no camera. -->
+  <div class="card" id="pending" style="display:__PENDING_DISPLAY__">
+    <h2>__PENDING_TITLE__</h2>
+    <a class="btn white" href="__PENDING_URL__">Download my photos</a>
+  </div>
+
+  <p class="lead">To find your photos with a selfie, open the booth in Safari.
+    This Wi-Fi sign-in window can&rsquo;t use the camera.</p>
+
+  <a class="btn" href="__SAFARI_URL__">Open in Safari</a>
+
+  <p class="sep">If that button doesn&rsquo;t open Safari:</p>
+  <div class="card">
+    <ol>
+      <li>Tap <b>Cancel</b> (top-left), then <b>Use Without Internet</b>.</li>
+      <li>Open the <b>Safari</b> app.</li>
+      <li>Go to <span class="addr">__BOOTH_HOST__</span></li>
+    </ol>
+  </div>
+</body>
+</html>

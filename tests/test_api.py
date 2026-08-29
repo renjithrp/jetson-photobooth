@@ -88,6 +88,32 @@ def test_delete_session_cannot_wipe_captures_root(admin):
     assert not keep.exists() and other.exists()
 
 
+def test_delete_photos_requires_auth(client):
+    r = client.post("/api/gallery/delete", json={"photos": ["/captures/s/a.jpg"]})
+    assert r.status_code == 401
+
+
+def test_delete_photos_removes_only_the_named_files(admin):
+    d = config.captures_dir() / "session_20260301_101010"
+    d.mkdir(parents=True, exist_ok=True)
+    keep, gone = d / "shot_01.jpg", d / "shot_02.jpg"
+    for f in (keep, gone):
+        f.write_bytes(b"jpegish")
+    r = admin.post("/api/gallery/delete",
+                   json={"photos": [f"/captures/{d.name}/{gone.name}"]})
+    assert r.status_code == 200 and r.json()["deleted"] == 1
+    assert keep.exists() and not gone.exists()
+    assert d.is_dir()                    # session kept — it still has a photo
+
+
+def test_delete_photos_cannot_escape_the_captures_tree(admin):
+    outside = config.data_dir() / "keep-me.txt"
+    outside.write_text("not a capture")
+    r = admin.post("/api/gallery/delete", json={"photos": ["/captures/../keep-me.txt"]})
+    assert r.status_code != 200          # resolver refuses it — nothing to delete
+    assert outside.exists()
+
+
 def test_login_lockout_after_repeated_failures(client):
     from backend import main
     main._login_fails.clear()
@@ -107,7 +133,17 @@ def test_health(client):
 
 
 def test_favicon(client):
-    assert client.get("/favicon.ico").status_code == 204
+    r = client.get("/favicon.ico")
+    assert r.status_code == 200
+    assert r.content.startswith(b"\x00\x00\x01\x00")      # ICONDIR: reserved, type=icon
+
+
+def test_pages_carry_the_icon(client):
+    """Every page links the icon, and the assets it points at are actually served."""
+    for path in ("/", "/admin", "/control", "/booth"):
+        assert '/assets/icon.svg' in client.get(path).text, path
+    for asset in ("icon.svg", "favicon.ico", "icon-192.png", "apple-touch-icon.png"):
+        assert client.get(f"/assets/{asset}").status_code == 200, asset
 
 
 def test_pages_load(client):

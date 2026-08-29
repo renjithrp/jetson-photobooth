@@ -25,9 +25,17 @@ def _clock_synced() -> bool:
     return datetime.now().year >= CLOCK_MIN_YEAR
 
 
+class SessionCancelled(Exception):
+    """Raised inside a session when someone aborts it during the countdown."""
+
+
 class CaptureService:
     def __init__(self, base_url_provider: Callable[[], str]) -> None:
         self._busy = asyncio.Lock()
+        # Set to abort the countdown of the session that is currently running.
+        # Cleared at the start of every session so a stray press while idle can
+        # never carry over and kill the *next* one.
+        self._cancel = asyncio.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
         self.base_url = base_url_provider
         self.last_finals: list = []      # most recent session outputs (for reprint)
@@ -56,12 +64,31 @@ class CaptureService:
             return
         self._loop.call_soon_threadsafe(lambda: self._spawn(self.run_session(source)))
 
+    def cancel_threadsafe(self, source: str = "manual") -> None:
+        """Callable from trigger threads: abort a session that is still counting down.
+
+        A press while nothing is running is deliberately a no-op rather than an
+        armed flag — otherwise it would silently cancel whatever someone starts next.
+        """
+        if self._loop is None:
+            return
+        self._loop.call_soon_threadsafe(self._cancel_if_running)
+
+    def _cancel_if_running(self) -> None:
+        if self._busy.locked():
+            self._cancel.set()
+
     async def run_session(self, source: str = "manual") -> None:
         if self._busy.locked():
             return  # already running a session
         async with self._busy:
+            self._cancel.clear()
             try:
                 await self._session(source)
+            except SessionCancelled:
+                bus.publish({"type": "cancelled", "source": source})
+                await asyncio.sleep(1.5)
+                bus.publish({"type": "idle"})
             except CaptureError as e:
                 bus.publish({"type": "error", "message": str(e)})
                 await asyncio.sleep(4)
@@ -98,7 +125,16 @@ class CaptureService:
                     # so the shutter fires right on the flash cue (no ~1s AF lag).
                     # Fire-and-forget — a failure just means capture does its own AF.
                     loop.run_in_executor(None, lambda: daemon_prefocus(s))
-                await asyncio.sleep(1)
+                # Sleep the second, but wake immediately if someone cancels — waiting
+                # out the full tick would make the stop button feel unresponsive.
+                try:
+                    await asyncio.wait_for(self._cancel.wait(), timeout=1)
+                except asyncio.TimeoutError:
+                    pass
+                else:
+                    raise SessionCancelled()
+            # Past this point the shutter is committed; cancelling a capture
+            # mid-transfer would leave the camera and the session dir inconsistent.
 
             # capture (blocking -> executor)
             bus.publish({"type": "capturing", "total": s.timer.num_shots})

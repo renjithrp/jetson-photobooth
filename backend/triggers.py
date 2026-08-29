@@ -115,7 +115,8 @@ class GestureTrigger(_BaseTrigger):
 
 # Known USB-serial adapter vendor IDs used by Arduino Nano clones/originals.
 _ARDUINO_VIDS = {0x2341, 0x2A03, 0x1B4F, 0x239A,  # Arduino / SparkFun / Adafruit
-                 0x1A86, 0x0403, 0x10C4}          # CH340, FTDI, CP210x (common Nano clones)
+                 0x1A86, 0x0403, 0x10C4,          # CH340/CH343, FTDI, CP210x (Nano clones)
+                 0x303A}                          # Espressif native USB (ESP32-S3 boards)
 
 
 class ArduinoTrigger(_BaseTrigger):
@@ -128,10 +129,12 @@ class ArduinoTrigger(_BaseTrigger):
     """
 
     def __init__(self, on_trigger, settings: Settings,
-                 on_print: Callable[[str], None] | None = None) -> None:
+                 on_print: Callable[[str], None] | None = None,
+                 on_cancel: Callable[[str], None] | None = None) -> None:
         super().__init__(on_trigger)
         self.t = settings.trigger
         self.on_print = on_print
+        self.on_cancel = on_cancel
 
     def _find_port(self):
         from serial.tools import list_ports
@@ -156,7 +159,9 @@ class ArduinoTrigger(_BaseTrigger):
             return
         token = (self.t.arduino_trigger_token or "").strip().upper()
         ptoken = (self.t.arduino_print_token or "").strip().upper()
+        ctoken = (self.t.arduino_cancel_token or "").strip().upper()
         last_fire = 0.0
+        last_noise = 0.0    # rate-limit for the "unrecognised line" log below
         while not self._stop.is_set():
             port = self._find_port()
             if not port:
@@ -178,13 +183,30 @@ class ArduinoTrigger(_BaseTrigger):
                     line = raw.decode(errors="ignore").strip().upper()
                     if not line:
                         continue
+                    if ctoken and line == ctoken:
+                        # Stop button: aborts a countdown. Deliberately NOT debounced
+                        # with the trigger — cancelling twice is harmless, and a
+                        # swallowed stop press is not.
+                        print("[trigger:arduino] CANCEL request")
+                        if self.on_cancel:
+                            self.on_cancel("arduino")
+                        continue
                     if ptoken and line == ptoken:
                         print("[trigger:arduino] PRINT request")
                         if self.on_print:
                             self.on_print("arduino")
                         continue
                     if token and line != token:
-                        continue  # a token is configured and this isn't it
+                        # Say what arrived. Silently dropping it made a board sending
+                        # the WRONG text indistinguishable from one sending nothing at
+                        # all — a dead button then needs a serial probe to tell the two
+                        # apart, with the port taken off the running backend to do it.
+                        now = time.time()
+                        if now - last_noise > 5.0:
+                            last_noise = now
+                            print(f"[trigger:arduino] ignoring unrecognised line "
+                                  f"{line!r} (waiting for {token!r})")
+                        continue
                     now = time.time()
                     if (now - last_fire) * 1000 < self.t.arduino_debounce_ms:
                         continue
@@ -202,9 +224,11 @@ class ArduinoTrigger(_BaseTrigger):
 
 class TriggerManager:
     def __init__(self, on_trigger: Callable[[str], None],
-                 on_print: Callable[[str], None] | None = None) -> None:
+                 on_print: Callable[[str], None] | None = None,
+                 on_cancel: Callable[[str], None] | None = None) -> None:
         self.on_trigger = on_trigger
         self.on_print = on_print
+        self.on_cancel = on_cancel
         self._threads: list[_BaseTrigger] = []
 
     def start(self, settings: Settings, skip_gesture: bool = False) -> None:
@@ -213,7 +237,8 @@ class TriggerManager:
         self.stop()
         mode = settings.trigger.mode
         if mode in ("arduino", "both"):
-            self._threads.append(ArduinoTrigger(self.on_trigger, settings, self.on_print))
+            self._threads.append(ArduinoTrigger(self.on_trigger, settings,
+                                                self.on_print, self.on_cancel))
         if mode in ("gpio",):   # legacy Orange Pi button
             self._threads.append(GPIOTrigger(self.on_trigger, settings))
         if mode in ("gesture", "both") and not skip_gesture:

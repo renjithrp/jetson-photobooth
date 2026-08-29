@@ -29,6 +29,7 @@ class TriggerSettings(BaseModel):
     arduino_baud: int = 115200
     arduino_trigger_token: str = "TRIG"   # line that fires a capture ("" = any non-empty line)
     arduino_print_token: str = "PRINT"    # line that requests a print of the last session
+    arduino_cancel_token: str = "CANCEL"  # line that aborts a countdown in progress
     arduino_debounce_ms: int = 400        # ignore repeated presses within this window
     # GPIO (legacy — Orange Pi 5B libgpiod; unused on Jetson, kept for compatibility)
     gpio_chip: str = "gpiochip0"
