@@ -38,7 +38,7 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
 |---|---|---|
 | Management / SSH / internet | `wlP1p1s0` (onboard) | LAN "Virus-5G", `192.168.86.30/24` — **never used for the AP** |
 | Guest hotspot (AP) | `wlx782051871b2c` (USB dongle) | SSID **PhotoBooth** / pass **booth1234**, `192.168.50.1/24`, 2.4 GHz, visible |
-| Captive portal | — | `:80` reverse-proxy, **full DNS hijack** (2026-08-16; `captive-full-hijack.conf`): every domain resolves to the booth so the captive sheet reliably opens on join — probe-only hijack was flaky on iOS (parallel probes escaped via pass-through internet and killed the sheet). Guests have no internet while on booth Wi-Fi (they join to download and leave); kiosk iPad exempted at the HTTP layer. `share.base_url = http://192.168.50.1` |
+| Captive portal | — | `:80` reverse-proxy. **Pass-through since 2026-08-28: guests get real internet** via NAT over the uplink, so their connectivity probe succeeds and **no sign-in sheet appears at all** — which is what makes the camera work, since the sheet's mini-browser can't open one. The full DNS hijack (`captive-full-hijack.conf`, every domain → the booth) is disabled, backed up at `/root/captive-full-hijack.conf.disabled`; restore it + `nmcli con up photobooth-ap` to go back. **Cost: the one-scan flow is gone** — a guest with photos waiting is no longer shown them automatically; they scan the QR to `192.168.50.1`. Guests are firewalled off every RFC1918 net (`deploy/guest-lan-block` dispatcher) so they can't reach the house LAN or the booth's admin on it. If a sheet ever does appear (venue with no uplink), it lands on `/welcome`, not the app. `share.base_url = http://192.168.50.1` |
 
 ## Feature state
 - **Trigger**: gesture, `wave` (open palm swung side-to-side, 3 alternating swings ≈ waving
@@ -60,10 +60,11 @@ Snapshot as of **2026-08-15**. Live booth: `pb@192.168.86.30` (LAN), app at `/op
   (per-file links are the S3/fallback path). Idempotent + deduped: re-opt-ins add only new
   photos, the folder link never changes, sent photos are never re-queued. Keyed to the
   normalized phone number — typos create separate guests.
-- **Guest self-download (one-scan)**: photos selected on the iPad are announced as a
-  pending download; joining the hotspot via the Wi-Fi QR pops the captive sheet onto
-  /booth with a **server-side-rendered** "Your N photos are ready — Download" banner
-  (captive mini-browsers don't run JS). Enablers: full DNS hijack (see Network table —
+- **Guest self-download**: photos selected on the iPad are announced as a pending
+  download. ⚠ The **one-scan** version of this (join Wi-Fi → sheet pops with the
+  banner) is INACTIVE while the hotspot is in pass-through mode — no hijack means no
+  sheet. The banner still renders server-side on `/welcome` for the case where a
+  sheet does appear, and the direct-download QR is the working path. Enablers: full DNS hijack (see Network table —
   probe-only proved flaky on iOS), the kiosk iPad's probes are
   answered with "Success" so it never sees the sheet (reserved 192.168.50.203,
   BOOTH_KIOSK_IPS drop-in), captive proxy retries stale sockets after backend restarts.

@@ -49,7 +49,15 @@ case "$ACTION" in
     else
       echo "== proxy/pass-through mode: guests keep internet; reach photos via the QR =="
       rm -f "$DNSMASQ_DST"          # ensure no leftover DNS blackhole
+      # The full-hijack file was added by hand on the booth and is NOT $DNSMASQ_DST,
+      # so removing only that left guests with no internet in "pass-through" mode.
+      rm -f "$DNSMASQ_DIR/captive-full-hijack.conf"
     fi
+
+    # Guests get internet via NAT; NAT alone doesn't keep them off the house LAN.
+    echo "== installing guest LAN block (NetworkManager dispatcher) =="
+    install -m 755 "$APP/deploy/guest-lan-block" \
+            /etc/NetworkManager/dispatcher.d/90-photobooth-guest-lan-block
 
     echo "== installing photobooth-captive.service =="
     cp "$APP/deploy/photobooth-captive.service" /etc/systemd/system/

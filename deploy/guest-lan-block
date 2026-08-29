@@ -1,0 +1,38 @@
+#!/bin/sh
+# NetworkManager dispatcher — keep booth guests off the local network.
+#
+# The guest AP runs in NetworkManager "shared" mode, which sets up NAT so guests
+# reach the internet through the booth's uplink. NAT on its own does NOT stop a
+# guest routing to the house LAN — including the booth's own admin page on it —
+# so this rejects every RFC1918 destination forwarded from the AP interface.
+#
+# Public traffic is unaffected, and so is the booth itself: guests reach
+# 192.168.50.1 through INPUT, not FORWARD, so the photo pages keep working.
+#
+# Installed to /etc/NetworkManager/dispatcher.d/ by setup-captive.sh. It runs on
+# every AP "up", because NetworkManager rebuilds its own rules then and would
+# otherwise leave these behind.
+IFACE="$1"
+ACTION="$2"
+AP_IF="${BOOTH_AP_IF:-wlx782051871b2c}"
+
+[ "$IFACE" = "$AP_IF" ] || exit 0
+case "$ACTION" in
+  up|dhcp4-change) ;;
+  *) exit 0 ;;
+esac
+
+# Delete-then-insert, never "add if missing". NetworkManager rebuilds its own
+# FORWARD jump when the AP comes up, and that jump leads to
+#   -A nm-sh-fw-<if> -s 192.168.50.0/24 -i <if> -j ACCEPT
+# which accepts ALL guest-forwarded traffic. An "already present, skip" check left
+# these rules sitting BEHIND that jump, where they never match — the block looked
+# installed and did nothing. Re-inserting at the head every time is what makes it
+# actually take effect.
+for NET in 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12 169.254.0.0/16; do
+  while iptables -C FORWARD -i "$AP_IF" -d "$NET" -j REJECT --reject-with icmp-admin-prohibited 2>/dev/null; do
+    iptables -D FORWARD -i "$AP_IF" -d "$NET" -j REJECT --reject-with icmp-admin-prohibited
+  done
+  iptables -I FORWARD 1 -i "$AP_IF" -d "$NET" -j REJECT --reject-with icmp-admin-prohibited
+done
+logger -t photobooth "guest LAN block applied on $AP_IF"
