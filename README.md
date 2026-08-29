@@ -141,6 +141,28 @@ Tune **match threshold** in admin (higher = stricter).
 > **Legacy:** `deploy/install-faces.sh` and `native/convert_arcface_to_rknn.py` target the
 > original Orange Pi 5B / RK3588 NPU (RKNN) build. They are **not** used on the Jetson.
 
+## App icon
+
+The booth mark is a six-blade camera aperture in mint on the booth teal (the accent the
+kiosk and admin already use). It is defined once, as geometry, in `tools/make_icon.py` and
+emitted both as an SVG and as rasters:
+
+```bash
+python3 tools/make_icon.py      # standard library only — no Pillow/ImageMagick needed
+```
+
+| Output | Used by |
+|---|---|
+| `frontend/assets/icon.svg` | every page (`<link rel="icon">`), the master artwork |
+| `frontend/assets/favicon.ico` (32+48) | `/favicon.ico`, older browsers |
+| `frontend/assets/icon-192.png`, `icon-512.png` | Android / home-screen shortcuts |
+| `frontend/assets/apple-touch-icon.png` (180) | iOS "add to home screen" |
+| `ios/PhotoBooth/Assets.xcassets/AppIcon.appiconset/` (1024, opaque) | the iPad app |
+
+The generated files are committed — re-run the script only when the artwork changes.
+Rasterising is done in-process with signed distance fields rather than by shelling out to
+macOS `qlmanage`, which renders an SVG as a *text-document* thumbnail at some sizes.
+
 ## Tests
 
 ```bash

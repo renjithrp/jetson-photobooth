@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"
+     viewBox="0 0 1024 1024" role="img" aria-label="PhotoBooth">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#115e59"/>
+      <stop offset="0.55" stop-color="#0a3f3b"/>
+      <stop offset="1" stop-color="#042f2e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.44" r="0.55">
+      <stop offset="0" stop-color="#2dd4bf" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#2dd4bf" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="blade" x1="0.15" y1="0" x2="0.75" y2="1">
+      <stop offset="0" stop-color="#f0fdfa"/>
+      <stop offset="0.45" stop-color="#7ceada"/>
+      <stop offset="1" stop-color="#22c3ae"/>
+    </linearGradient>
+    <!-- white keeps the blade, black cuts through to the background -->
+    <mask id="iris">
+      <circle cx="512" cy="512" r="306" fill="#fff"/>
+      <polygon points="609.0,456.0 512.0,400.0 415.0,456.0 415.0,568.0 512.0,624.0 609.0,568.0" fill="#000"/>
+      <g stroke="#000" stroke-width="30" stroke-linecap="butt">
+      <line x1="512.0" y1="400.0" x2="274.5" y2="262.9"/>
+      <line x1="415.0" y1="456.0" x2="177.5" y2="593.1"/>
+      <line x1="415.0" y1="568.0" x2="415.0" y2="842.2"/>
+      <line x1="512.0" y1="624.0" x2="749.5" y2="761.1"/>
+      <line x1="609.0" y1="568.0" x2="846.5" y2="430.9"/>
+      <line x1="609.0" y1="456.0" x2="609.0" y2="181.8"/>
+      </g>
+    </mask>
+  </defs>
+
+  <rect width="1024" height="1024" rx="225" fill="url(#bg)"/>
+  <rect width="1024" height="1024" rx="225" fill="url(#glow)"/>
+
+  <circle cx="512" cy="512" r="306" fill="url(#blade)" mask="url(#iris)"/>
+
+  <!-- the opening: darkened, with a thin specular streak so it reads as glass.
+       Deliberately low-contrast -- at favicon size it should fade out rather
+       than turn into a smudge. -->
+  <polygon points="609.0,456.0 512.0,400.0 415.0,456.0 415.0,568.0 512.0,624.0 609.0,568.0" fill="#02201f" fill-opacity="0.62"/>
+  <ellipse cx="470" cy="466" rx="34" ry="11" fill="#ffffff"
+           fill-opacity="0.2" transform="rotate(-38 470 466)"/>
+</svg>
