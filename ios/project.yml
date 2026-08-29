@@ -9,7 +9,7 @@ settings:
     DEVELOPMENT_TEAM: J6QU4CTJD7
     CODE_SIGN_STYLE: Automatic
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "2"   # bump for EVERY TestFlight upload — must be unique
+    CURRENT_PROJECT_VERSION: "3"   # bump for EVERY TestFlight upload — must be unique
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "2"          # iPad only (booth kiosk device)
 targets:
