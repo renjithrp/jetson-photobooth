@@ -30,6 +30,10 @@ targets:
       path: PhotoBooth/Info.plist
       properties:
         CFBundleDisplayName: PhotoBooth
+        # Declares no non-exempt encryption (the app only speaks plain HTTP/TLS to
+        # the booth). Without it every TestFlight build stops for a manual export
+        # compliance answer before testers can install.
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         NSCameraUsageDescription: "Take a selfie to find your photos."
         NSLocalNetworkUsageDescription: "Connect to the photo booth on this network."
