@@ -225,16 +225,20 @@ struct QRStepsView: View {
     @State private var page = 0
     @State private var autoAdvanced = false
 
-    /// Direct zip-download URL for the chosen photos, on the guest-facing base
-    /// (derived from find_url so it matches what phones on the hotspot can reach).
+    /// Short link to the chosen photos, on the guest-facing base (derived from
+    /// find_url so it matches what phones on the hotspot can reach).
+    ///
+    /// Deliberately NOT the full /api/download?p=…&p=… URL: that grew ~74 bytes per
+    /// photo and past roughly 37 photos exceeded what a QR can encode, so
+    /// CIQRCodeGenerator returned nil and the guest was told the code couldn't be
+    /// created. The booth already has the list — announceDownload() sends it in
+    /// .task — so /d resolves to exactly that download, and the code stays small
+    /// and coarse enough to scan quickly.
     private var directURL: String? {
         guard !downloadPhotos.isEmpty else { return nil }
         let base = info?.find_url?.replacingOccurrences(of: "/booth", with: "")
             ?? booth.url("").absoluteString
-        let qs = downloadPhotos.map {
-            "p=" + ($0.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? $0)
-        }.joined(separator: "&")
-        return base + "/api/download?" + qs
+        return base + "/d"
     }
 
     var body: some View {

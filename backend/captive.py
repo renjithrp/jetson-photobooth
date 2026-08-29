@@ -67,6 +67,7 @@ _PROXY_EXACT = frozenset({
     "/api/share/drive",      # opt a photo in for Google Drive upload
     "/api/download",         # zip download of selected photos
     "/api/download/pending", # ready-to-download banner on the captive popup page
+    "/d",                    # short link the iPad's download QR points at
 })
 
 

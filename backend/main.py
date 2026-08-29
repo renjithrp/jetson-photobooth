@@ -26,7 +26,8 @@ import qrcode
 
 from fastapi import (Depends, FastAPI, File, HTTPException, Query, Request, Response,
                      UploadFile, WebSocket, WebSocketDisconnect)
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import (FileResponse, HTMLResponse, RedirectResponse,
+                               StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
@@ -682,6 +683,24 @@ def render_guest_page(pend: dict) -> str:
     return (text.replace("__PENDING_DISPLAY__", "none")
                 .replace("__PENDING_TITLE__", "")
                 .replace("__PENDING_URL__", "#"))
+
+
+@app.get("/d")
+async def download_pending_short() -> RedirectResponse:
+    """Short stand-in for the pending download, so the iPad's QR stays small.
+
+    The QR used to encode the full /api/download?p=…&p=… URL, which grows ~74 bytes
+    per photo: past ~37 photos it exceeds what a QR can hold and CIQRCodeGenerator
+    returns nil — the guest just saw "couldn't create the download code". The booth
+    already knows which photos are pending (announced by the iPad), so the code only
+    needs to say "that download".
+
+    Falls back to the find-your-photos page rather than erroring if nothing is
+    pending — a guest who scans a stale code still lands somewhere useful.
+    """
+    p = _pending_view()
+    return RedirectResponse(p["download"] if p.get("pending") else "/booth",
+                            status_code=302, headers=_NO_CACHE)
 
 
 @app.get("/api/download/pending")

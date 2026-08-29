@@ -138,6 +138,38 @@ def test_hotspot_guests_reports_opaque_devices(client):
         assert isinstance(d["seconds"], int)
 
 
+def test_short_download_link_survives_a_big_selection(admin):
+    """The iPad's download QR points at /d, not a URL listing every photo.
+
+    The full URL grew ~74 bytes per photo and past ~37 photos couldn't be encoded
+    as a QR at all, so the guest was told the code couldn't be created.
+    """
+    d = config.captures_dir() / "session_20260401_120000"
+    d.mkdir(parents=True, exist_ok=True)
+    photos = []
+    for i in range(40):
+        f = d / f"shot_{i:02d}.jpg"
+        f.write_bytes(b"x")
+        photos.append(f"/captures/{d.name}/{f.name}")
+    from backend import main
+    try:
+        assert admin.post("/api/download/announce", json={"photos": photos}).status_code == 200
+        r = admin.get("/d", follow_redirects=False)
+        assert r.status_code == 302
+        # One short code resolves to the full 40-photo download.
+        loc = r.headers["location"]
+        assert "/api/download?" in loc and loc.count("p=") == 40
+    finally:
+        # single-slot module state — leaving it set breaks tests that expect none
+        main._pending_dl.clear()
+
+
+def test_short_download_link_never_dead_ends(client):
+    """A stale code (nothing pending) still lands the guest somewhere useful."""
+    r = client.get("/d", follow_redirects=False)
+    assert r.status_code == 302
+
+
 def test_health(client):
     j = client.get("/api/system/info").json()
     assert "version" in j and "disk" in j and "camera" in j
