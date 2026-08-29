@@ -157,28 +157,70 @@ async def booth() -> HTMLResponse:
     return HTMLResponse(render_guest_page(_pending_view()), headers=_NO_CACHE)
 
 
+# MAC -> when this process first saw it associated. DHCP leases were tried first
+# and are the wrong source: they outlive the connection (4 leases on file while 1
+# device was actually associated), and a returning phone reuses its old lease, so a
+# guest who had ever joined before never looked "new". Association state is live.
+_station_seen: dict[str, float] = {}
+_stations_bootstrapped = False
+IW = "/usr/sbin/iw"
+
+
+def _ap_interface() -> str | None:
+    """The wireless interface running in AP mode, whatever it's named."""
+    try:
+        out = subprocess.run([IW, "dev"], capture_output=True, text=True, timeout=3).stdout
+    except Exception:
+        return None
+    iface = None
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith("Interface "):
+            iface = line.split()[1]
+        elif line.startswith("type ") and line.split()[1] == "AP" and iface:
+            return iface
+    return None
+
+
+def _associated_macs(iface: str) -> list[str]:
+    try:
+        out = subprocess.run([IW, "dev", iface, "station", "dump"],
+                             capture_output=True, text=True, timeout=3).stdout
+    except Exception:
+        return []
+    return [ln.split()[1] for ln in out.splitlines() if ln.startswith("Station ")]
+
+
 @app.get("/api/hotspot/guests")
 async def hotspot_guests() -> dict:
-    """Devices currently holding a DHCP lease on the guest hotspot.
+    """Phones currently associated to the guest hotspot, and how long each has been.
 
-    The kiosk uses this to confirm a join on the BOOTH screen: since the hotspot
-    went pass-through there is no captive sheet, so a guest who scans the Wi-Fi QR
-    gets no feedback at all and doesn't know to scan the second QR.
+    With no captive sheet, a guest scanning the Wi-Fi QR gets no confirmation at
+    all, so the booth confirms it instead — the kiosk shows a banner and the iPad
+    advances its QR steps when a phone joins.
 
-    Returns opaque per-device ids, not MACs or IPs — the kiosk only needs to spot a
-    device it hasn't seen before, and this page is open on the LAN.
+    `seconds` is measured from when THIS process first saw the device, so it's
+    "recently joined" rather than true association age (the dongle's driver reports
+    no connected-time). Devices present at startup are backdated so a backend
+    restart doesn't read as everyone joining at once.
     """
+    global _stations_bootstrapped
     import hashlib
-    devices = []
-    for f in Path("/var/lib/NetworkManager").glob("dnsmasq-*.leases"):
-        try:
-            for line in f.read_text().splitlines():
-                parts = line.split()
-                if len(parts) >= 3:
-                    devices.append(hashlib.sha1(parts[1].encode()).hexdigest()[:10])
-        except OSError:
-            continue
-    return {"count": len(devices), "devices": sorted(set(devices))}
+    iface = _ap_interface()
+    macs = _associated_macs(iface) if iface else []
+    now = time.monotonic()
+    if not _stations_bootstrapped:
+        for m in macs:
+            _station_seen.setdefault(m, now - 86400)     # already here = not a new join
+        _stations_bootstrapped = True
+    for m in macs:
+        _station_seen.setdefault(m, now)
+    for gone in set(_station_seen) - set(macs):          # left: forget, so a rejoin counts
+        _station_seen.pop(gone, None)
+    devices = [{"id": hashlib.sha1(m.encode()).hexdigest()[:10],
+                "seconds": int(now - _station_seen[m])} for m in macs]
+    return {"count": len(devices),
+            "devices": sorted(devices, key=lambda d: d["seconds"])}
 
 
 @app.get("/api/wifi/info")

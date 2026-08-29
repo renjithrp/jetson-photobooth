@@ -131,9 +131,11 @@ def test_hotspot_guests_reports_opaque_devices(client):
     screen — but this page is open on the LAN, so no MACs or IPs come back."""
     j = client.get("/api/hotspot/guests").json()
     assert set(j) == {"count", "devices"}
-    assert j["count"] == len(j["devices"]) or j["count"] >= len(j["devices"])
+    assert j["count"] == len(j["devices"])
     for d in j["devices"]:
-        assert len(d) == 10 and all(c in "0123456789abcdef" for c in d)
+        assert set(d) == {"id", "seconds"}
+        assert len(d["id"]) == 10 and all(c in "0123456789abcdef" for c in d["id"])
+        assert isinstance(d["seconds"], int)
 
 
 def test_health(client):

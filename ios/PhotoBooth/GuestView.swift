@@ -223,9 +223,6 @@ struct QRStepsView: View {
     var onDone: () -> Void
     @State private var info: WifiInfo?
     @State private var page = 0
-    // Devices already on the hotspot when step 1 appears (this iPad, staff phones).
-    // Only a device that shows up AFTER that counts as "the guest just joined".
-    @State private var known: Set<String>?
     @State private var autoAdvanced = false
 
     /// Direct zip-download URL for the chosen photos, on the guest-facing base
@@ -301,22 +298,21 @@ struct QRStepsView: View {
         }
     }
 
-    /// Move to step 2 by itself when a new phone appears on the hotspot.
+    /// Move to step 2 by itself once a phone joins the hotspot.
     ///
     /// The guest has no way to tell the booth they joined — their phone shows no
-    /// confirmation — so they were left staring at step 1 wondering whether the scan
-    /// worked. The booth can see the DHCP lease, so it advances for them.
+    /// confirmation — so they were left on step 1 unsure whether the scan worked.
+    /// The booth watches Wi-Fi associations and advances for them.
+    ///
+    /// Keyed on "associated within the last 25s", not on a device the booth hasn't
+    /// seen before: the first version compared against DHCP leases, which outlive
+    /// the connection, so a phone that had ever joined the booth reused its lease
+    /// and never counted as new — which is exactly why this didn't fire in testing.
     private func watchForJoin() async {
         while !Task.isCancelled {
-            if let now = await booth.hotspotGuests().map(Set.init) {
-                if let before = known {
-                    if page == 0 && !now.subtracting(before).isEmpty {
-                        withAnimation { autoAdvanced = true; page = 1 }
-                    }
-                    known = now
-                } else {
-                    known = now                     // first poll = the baseline
-                }
+            if page == 0, let ages = await booth.hotspotGuestAges(),
+               ages.contains(where: { $0 <= 25 }) {
+                withAnimation { autoAdvanced = true; page = 1 }
             }
             try? await Task.sleep(for: .seconds(2))
         }

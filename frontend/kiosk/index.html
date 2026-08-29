@@ -256,14 +256,14 @@ async function loadWifi(){
 // sheet in pass-through mode), so confirm it here instead. Devices already on the
 // hotspot at load — the kiosk iPad, staff phones — are snapshotted and ignored;
 // only a NEW device counts as "someone just joined".
-let SEEN_DEVICES = null, joinOkTimer = null;
+let joinOkTimer = null;
 async function pollGuests(){
   try{
     const j = await (await fetch("/api/hotspot/guests")).json();
-    const now = new Set(j.devices || []);
-    if (SEEN_DEVICES === null){ SEEN_DEVICES = now; return; }
-    const fresh = [...now].some(d => !SEEN_DEVICES.has(d));
-    SEEN_DEVICES = now;
+    // A phone that associated in the last ~25s. The booth times arrivals itself;
+    // DHCP leases were the first attempt and outlive the connection, so a returning
+    // phone reused its lease and never looked new.
+    const fresh = (j.devices || []).some(d => d.seconds <= 25);
     if (fresh && !L("findcard").classList.contains("hidden")){
       L("joinok").classList.remove("hidden");
       clearTimeout(joinOkTimer);

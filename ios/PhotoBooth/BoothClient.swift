@@ -182,12 +182,12 @@ final class BoothClient: ObservableObject {
         (await gallerySessions() ?? []).flatMap { $0.images }
     }
 
-    /// Opaque ids of devices holding a DHCP lease on the guest hotspot, or nil if
-    /// the booth didn't answer. The nil matters: treating a failed poll as "nobody
-    /// is connected" would make the next success look like a fresh join.
-    func hotspotGuests() async -> [String]? {
-        struct R: Decodable { let devices: [String] }
-        return (await get("/api/hotspot/guests") as R?)?.devices
+    /// Seconds since each phone currently associated to the hotspot joined, or nil
+    /// if the booth didn't answer.
+    func hotspotGuestAges() async -> [Int]? {
+        struct Device: Decodable { let id: String; let seconds: Int }
+        struct R: Decodable { let devices: [Device] }
+        return (await get("/api/hotspot/guests") as R?)?.devices.map(\.seconds)
     }
 
     /// Permanently delete photos from the booth. Admin-only server-side, so this
